@@ -1,0 +1,10 @@
+import {
+  "Kleinrat/frictionless/src/core",
+  "moonbitlang/core/json",
+}
+
+options(
+  link: {
+    "js": { "exports": [ "inspect_json", "validate_json" ], "format": "esm" },
+  },
+)

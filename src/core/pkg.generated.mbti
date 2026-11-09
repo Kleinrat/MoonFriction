@@ -1,0 +1,122 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kleinrat/frictionless/src/core"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn cast_cell(String, FieldType, Array[String]) -> Result[Cell, String]
+
+pub fn field(String, FieldType) -> Field
+
+pub fn input_from_csv(String, String) -> Result[InputTable, String]
+
+pub fn parse_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
+
+pub fn safe_resource_path(String) -> Bool
+
+pub fn validate_foreign_key(Table, Array[String], Table, Array[String]) -> Array[Diagnostic]
+
+pub fn validate_package(Descriptor, Array[InputTable]) -> PackageReport
+
+pub fn validate_primary_key(Table, Array[String]) -> Array[Diagnostic]
+
+pub fn validate_table(String, Array[Field], Array[String], Array[Array[String]], missing_values? : Array[String]) -> TableReport
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum Cell {
+  Missing
+  TextValue(String)
+  IntegerValue(Int64)
+  NumberValue(Double)
+  BooleanValue(Bool)
+}
+
+#derive(@debug.Debug)
+pub(all) struct Descriptor {
+  original : @json.Json
+  resources : Array[Resource]
+}
+
+#derive(Eq, @debug.Debug, @json.ToJson)
+pub(all) struct Diagnostic {
+  code : String
+  resource : String
+  row : Int32
+  field : String
+  message : String
+}
+
+#derive(@debug.Debug)
+pub(all) struct Field {
+  name : String
+  kind : FieldType
+  required : Bool
+  unique : Bool
+  minimum : Double?
+  maximum : Double?
+  min_length : Int32?
+  max_length : Int32?
+}
+
+#derive(Eq, @debug.Debug)
+pub(all) enum FieldType {
+  Text
+  Integer
+  Number
+  Boolean
+}
+
+#derive(@debug.Debug)
+pub(all) struct ForeignKey {
+  fields : Array[String]
+  resource : String
+  reference_fields : Array[String]
+}
+
+#derive(@debug.Debug)
+pub(all) struct InputTable {
+  name : String
+  header : Array[String]
+  rows : Array[Array[String]]
+}
+
+#derive(@debug.Debug)
+pub(all) struct PackageReport {
+  tables : Array[Table]
+  errors : Array[Diagnostic]
+}
+pub fn PackageReport::valid(Self) -> Bool
+
+#derive(@debug.Debug)
+pub(all) struct Resource {
+  name : String
+  path : String
+  fields : Array[Field]
+  missing_values : Array[String]
+  primary_key : Array[String]
+  foreign_keys : Array[ForeignKey]
+}
+
+#derive(@debug.Debug)
+pub(all) struct Table {
+  name : String
+  fields : Array[Field]
+  rows : Array[Array[Cell]]
+}
+
+#derive(@debug.Debug)
+pub(all) struct TableReport {
+  table : Table
+  errors : Array[Diagnostic]
+}
+pub fn TableReport::valid(Self) -> Bool
+
+// Type aliases
+
+// Traits

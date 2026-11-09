@@ -1,0 +1,7 @@
+_build/
+.mooncakes/
+work/
+node_modules/
+.env
+*.log
+.venv-reference/

@@ -1,0 +1,61 @@
+{
+  "name": "sensors-example",
+  "title": "Sensor readings (synthetic example)",
+  "resources": [
+    {
+      "name": "sensors",
+      "path": "sensors.csv",
+      "format": "csv",
+      "schema": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "name": "unit",
+            "type": "string",
+            "constraints": {
+              "required": true
+            }
+          }
+        ],
+        "primaryKey": "id"
+      }
+    },
+    {
+      "name": "readings",
+      "path": "readings.csv",
+      "format": "csv",
+      "schema": {
+        "fields": [
+          {
+            "name": "sensor_id",
+            "type": "string"
+          },
+          {
+            "name": "value",
+            "type": "number",
+            "constraints": {
+              "minimum": -100,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "stable",
+            "type": "boolean"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "fields": "sensor_id",
+            "reference": {
+              "resource": "sensors",
+              "fields": "id"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

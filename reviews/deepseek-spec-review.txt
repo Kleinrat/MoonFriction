@@ -1,0 +1,641 @@
+MoonFriction 规范审查：Frictionless Data Package v1 + Table Schema v1（明确子集）, Value: 1
+MoonFriction 规范审查：Frictionless Data Package v1 + Table Schema v1（明确子集）
+0. 本轮范围与依据, Value: 2
+0. 本轮范围与依据
+抓取时间：2026-11-09；只通过 HTTP 读取公开规范，未改动工作区任何文件。
+规范页面（页面标题均带  (v1) ）：
+：Version 1，Updated 5 October 2021
+：Version 1，Updated 2 May 2017
+为判断外键目标资源与资源名，补查：
+机器可读辅助证据：
+、
+。注意：这两个 JSON Schema 里的  context  文本是说明性材料，与正文偶有冲突，见 §5。
+未覆盖：CSV Dialect、Tabular Data Package profile、Frictionless v2、远程 schema 解析细节。因此本文是“子集审查”，不构成完整标准兼容声明。
+1. 结论速览, Value: 2
+1. 结论速览
+missingValues  是 物理字符串 → 逻辑 null 的前置过滤 ，发生在类型转换之前；默认  [""] ， []  表示完全不转换。
+required  只判断“逻辑值是否为 null”， 不判断是否为空串 ；空串是否变成 null 完全由  missingValues  决定。
+primaryKey  字段隐式等价于  required: true ，并且（含复合键）必须在 逻辑值层面 唯一；比较发生在 cast 之后。
+foreignKeys  的规范只定义结构； 悬空引用、null 外键值、目标资源缺失时的校验行为，规范没有规定 ，实现必须自定策略并显式报错或报告。
+integer / number / boolean  的  format  只有  default ，但词法细节存在空白（符号、前导零、指数大小写、 bareNumber:false 、NaN 比较），子集必须收紧并写测试固定。
+2. 逐项审查, Value: 2
+2. 逐项审查
+2.1 missingValues 在类型转换前的语义, Value: 3
+2.1 
+missingValues
+ 在类型转换前的语义
+规范依据：
+原文关键句：
+“missingValues dictates which string values should be treated as null values. This conversion to null is done before any other attempted type-specific string conversion.” “The default value  [""]  means that empty strings will be converted to null before any other processing takes place.” “Providing the empty list  []  means that no conversion to null will be done, on any value.” “missingValues MUST be an array where each entry is a string.”
+建议实现固定为以下流水线：
+代码块
+raw cell (物理值)
+要点：
+比较对象是 物理表示中的字符串 。CSV 单元格天然是字符串；inline JSON 里的  null  已经是 null，数字  0  不应先字符串化再误判（规范只说“string values”）。
+精确匹配： " " （空格）不等于  "" ；默认配置下空单元格才变 null。需要空格时显式加入  ["", " "] 。
+默认  [""]  对 所有类型 生效（正文表述），包括  string ；因此默认配置下无法用  ""  表示“空字符串值”，要表示就用  missingValues: []  或哨兵值。
+missingValues  一旦显式给出，就是 替换默认 而非追加： ["NA"]  之后  ""  不再是 null，会进入 cast；对  number  就是 cast error。
+NaN  对  number  是合法特殊值；只有把它写进  missingValues  时才优先变成 null。顺序不能反。
+2.2 required / 空串 / null 的差异, Value: 3
+2.2 
+required
+ / 空串 / null 的差异
+规范依据：
+、
+原文关键句：
+“Indicates whether this field cannot be null. If required is false (the default), then null is allowed.” “All constraints MUST be tested against the logical representation of data.”
+三层要分清：
+层
+值
+说明
+物理
+""
+、
+" "
+、
+"NA"
+CSV 文本
+逻辑
+null
+命中 
+missingValues
+ 后的结果
+逻辑
+""
+（空字符串）
+仅当 
+missingValues
+ 未命中时保留
+结论：
+required: true  拒绝的是 逻辑 null ，不是空串本身。
+默认  missingValues  下：CSV 空单元格 → null →  required: true  报错； string  字段也一样。
+missingValues: []  下： ""  保持为逻辑  "" ， required: true 通过 （前提是字段类型为 string 且 cast 合法）。
+非 string 类型 +  missingValues: [] ： ""  进入 cast，通常直接报错（例如 integer/number/boolean 均无法解析），规范未明文规定“空串错误”还是“null”，属于实现定义。
+required: false （默认）：null 合法，字段仍可缺值。
+注意术语：Table Schema 的  required  在  constraints  里， 不是  JSON Schema 的“属性必须存在”；字段描述符里真正 required 的是  name 。
+不确定：inline JSON 行对象中“键缺失”是否等价于 null，规范未明确；建议按 null 处理并测试。
+2.3 primaryKey 的非空与唯一性, Value: 3
+2.3 
+primaryKey
+ 的非空与唯一性
+规范依据：
+原文关键句：
+“Per SQL standards, the fields cannot be null, so their use in the primary key is equivalent to adding required: true to their constraints.” “The primaryKey, if present, MUST be: Either: an array of strings … Or: a single string …” “Strictly, order of values in the array does not matter.”
+实现要求：
+形态：string 或非空且元素唯一的 string 数组（JSON Schema： minItems: 1 、 uniqueItems: true ）。
+引用合法性：每个名字必须对应  fields  中存在的字段名；未知字段名应拒绝。
+非空：PK 字段逻辑值为 null 即违规（含复合键任一分量 null）；默认  missingValues  下  ""  先变 null，因此空 PK 单元格违规。
+唯一：同一表内按 逻辑值 比较；单键比较值，复合键比较元组； number  键  "1"  与  "1.0"  cast 后相等 → 重复； string  键默认区分大小写。
+顺序：数组顺序不影响语义，但规范 RECOMMENDED 按  fields  顺序；实现可保留原顺序用于错误信息。
+与字段级  unique  约束的关系：PK 唯一性是表级检查；对 PK 字段再加  unique  是冗余但不冲突。
+待定：字段名匹配是否大小写不敏感。 name  的唯一性“SHOULD NOT be considered case sensitive”，但 PK 名字匹配未明确；建议实现按精确匹配并文档化，或统一按大小写不敏感并在错误信息中说明。
+2.4 foreignKeys 中缺失键的处理, Value: 3
+2.4 
+foreignKeys
+ 中缺失键的处理
+规范依据：
+规范明确的结构 MUST：
+foreignKeys  若存在，MUST 是数组；元素 MUST 是 object。
+每个元素 MUST 有  fields  与  reference 。
+fields ：string 或 array，语义同  primaryKey 。
+reference  MUST 是 object，含  resource  与  fields ； resource  是当前 data package 内的资源名，自引用 MUST 用  "" 。
+reference.fields ：若外层  fields  是 string 则 MUST 是 string；若是 array 则 MUST 是 同长度 的 array；按位置对应。
+对于“缺失键”，要分两种含义：
+A. 描述符结构缺失（应硬性拒绝）
+缺  fields  / 缺  reference  / 缺  reference.resource  / 缺  reference.fields 。
+fields  与  reference.fields  类型不一致，或 array 长度不一致。
+引用不存在的源字段、目标字段、目标资源。
+单表校验 API 遇到非  ""  的  reference.resource ：应报 “unsupported”，不能静默忽略。
+B. 数据级引用缺失（规范未规定行为）
+规范只说外键把本表字段值“connect to”目标字段值， 没有 MUST 要求消费者必须校验悬空引用 ，也没有规定  null  外键值如何处理。
+因此必须自定策略，建议：
+严格模式：悬空引用 →  E_FK （带行号、字段、原始值、缺失目标值）；宽松模式：生成报告/警告，不 fail。
+null  外键值：建议视为“无引用”而允许（SQL 语义），除非该字段  required: true  或被 PK 覆盖。
+目标资源/目标字段不存在：始终  E_SCHEMA ，不进入数据校验。
+比较在逻辑值上，并且目标字段必须按它自己的 schema 做同样的 cast 规范化。
+规范没有要求外键目标必须是  primaryKey  或  unique ；不要额外硬性强制（可给 warning）。
+跨资源校验需要先加载 data package 的全部 resources；这是 Data Package 层面的事，单资源 API 必须显式拒绝而非假装通过。
+2.5 integer / number / boolean 的默认格式, Value: 3
+2.5 
+integer
+ / 
+number
+ / 
+boolean
+ 的默认格式
+规范依据：
+、
+、
+、
+通用规则：
+type  缺省 →  string ； format  缺省 →  default 。
+三种类型的  format  都只有  default （JSON Schema： enum: ["default"] ），其他 format 值应拒绝。
+所有值先经过  missingValues  过滤，再进入下列词法。
+类型
+默认词法
+默认可接受
+默认应拒绝
+integer
+“standard way for any valid integer”；
+bareNumber
+ 默认 
+true
+；无 
+groupChar
+/
+decimalChar
+"210"
+、
+"-42"
+"1.0"
+、
+"1E3"
+、
+"1,000"
+、
+" 1"
+、
+"1 "
+、
+"0x10"
+、
+"€1"
+number
+XML Schema decimal：可选符号、
+.
+ 小数、可省略小数部分；指数为 
+E
+ + 可选符号 + 至少一位数字；特殊值 
+NaN
+/
+INF
+/
+-INF
+（大小写不敏感）；
+decimalChar
+ 默认 
+"."
+，
+groupChar
+ 默认 
+null
+，
+bareNumber
+ 默认 
+true
+"210"
+、
+"+100000.00"
+、
+"-1.5"
+、
+"1E3"
+、
+"NaN"
+、
+"INF"
+、
+"-INF"
+、
+"nan"
+"1,000"
+（默认 groupChar 为 null）、
+" 1"
+、
+"1.0.0"
+、
+"€1"
+boolean
+物理字符串按 
+trueValues
+/
+falseValues
+ 精确匹配；默认 
+["true","True","TRUE","1"]
+、
+["false","False","FALSE","0"]
+；不 trim、不额外大小写折叠
+"true"
+、
+"True"
+、
+"TRUE"
+、
+"1"
+、
+"false"
+、
+"False"
+、
+"FALSE"
+、
+"0"
+"t"
+、
+"yes"
+、
+"2"
+、
+"TRUE "
+、
+" true"
+补充：
+integer / number  的数值范围、精度规范未规定。MoonBit 若用 Int64/Float64，必须显式定义溢出与精度策略（建议溢出报错、精度截断报错或文档化，禁止静默 wrap/round）。
+number  的  NaN / INF  不是合法 JSON 值；若逻辑层要序列化 JSON，需要单独策略（报错或字符串化），不能默认写出非法 JSON。
+boolean  自定义  trueValues / falseValues  是“替换默认”还是“追加”，规范正文只说 “customised”，JSON Schema 的  default  暗示替换；建议按替换实现，并在加载时拒绝两个列表有交集。
+number  的  groupChar / decimalChar 、 bareNumber: false  语义较松，若子集不支持，应显式报  unsupported ，不能静默按默认处理。
+3. 实现应明确拒绝的范围, Value: 2
+3. 实现应明确拒绝的范围
+原则： 语义会改变的东西不能静默忽略 ；规范允许的未知元数据不能误伤。
+3.1 规范 MUST / 结构级：必须报错, Value: 3
+3.1 规范 MUST / 结构级：必须报错
+Table Schema 描述符
+不是 JSON object；缺  fields ； fields  不是数组； fields  为空（JSON Schema  minItems: 1 ，正文未明说，建议从严）。
+字段元素不是 object；缺  name ； name  不是 string。
+missingValues  不是数组，或含非 string 元素。
+type / format  不是 string； constraints  不是 object。
+constraints.required / unique  不是 boolean； enum  不是数组； minimum / maximum  类型不符合该字段类型允许范围。
+对某类型声明了不适用的约束（正文 “Applies to” 表；例如  minimum  用于 string、 minLength  用于 integer）→ 描述符错误。
+primaryKey  不是 string/array；数组为空、含非 string、含重复项、引用未知字段名。
+foreignKeys  不是数组；元素不是 object；缺  fields / reference ； reference  缺  resource / fields ； fields  与  reference.fields  类型/长度不匹配；引用未知源字段/目标字段/资源。
+重复字段名：规范是 SHOULD（且 SHOULD 大小写不敏感），建议严格模式拒绝、宽松模式 warning，并在文档中说明这是实现策略而非 MUST。
+数据行列数与  fields  数不一致：规范是 SHOULD，建议严格模式报错，宽松模式 warning。
+数据级
+required: true  且逻辑值为 null。
+unique: true  且逻辑值重复（重复 null 的处理规范未定，见 §5）。
+PK 字段逻辑值为 null，或 PK 元组重复。
+严格模式下 FK 悬空引用。
+cast 失败：integer/number/boolean 的非法词法，或 string 的非法 format。
+数值溢出/精度无法表示（实现定义，但必须显式报错）。
+Data Package / Data Resource
+datapackage.json  不是 JSON object；缺  resources ； resources  不是数组或为空；resource 不是 object。
+resource 缺  name ； name  不是小写字母数字加  . / - / _ ；同一 package 内  name  重复。
+resource 同时有  path  和  data ，或两者都无（Data Resource：MUST 有且仅有一个）。
+path  为绝对路径或以  ../  开头（规范 MUST NOT；JSON Schema 也禁止以  . / / / ~  开头及包含  .. ）。
+schema  既不是 object 也不是 string；string 形式若子集不支持，显式报  unsupported 。
+无法解析的数据文件（编码/CSV 语法/行列数）→ 报错，不要部分吞掉。
+3.2 子集未支持：必须显式 Unsupported ，不能静默, Value: 3
+3.2 子集未支持：必须显式 
+Unsupported
+，不能静默
+非 inline schema（ schema  为本地路径或 URL）。
+远程  http(s)  resource path（若不做网络加载）。
+不支持的类型： date / time / datetime / year / yearmonth / duration / geopoint / geojson / object / array / any （按最终子集清单决定）。
+非 default format： string  的  email / uri / binary / uuid ， geopoint  的  array / object ， geojson  的  topojson  等。
+bareNumber: false 、自定义  decimalChar / groupChar （若不实现）。
+自定义  trueValues / falseValues （若不实现）。
+跨资源 FK（ reference.resource != "" ）在单表实现中。
+多文件  path  数组、非 UTF-8、非逗号分隔等 CSV 变体（属于 CSV Dialect，超出本轮两个规范范围，但子集必须声明边界）。
+3.3 不应拒绝（规范允许 / 有默认值）, Value: 3
+3.3 不应拒绝（规范允许 / 有默认值）
+Table Schema / Data Package / Data Resource 中未定义的额外属性：正文明确 “MAY contain any number of other properties”，必须忽略或保留，不得因此报错。
+缺  type （默认 string）、缺  format （默认 default）、缺  constraints 、缺  required （默认 false）、缺  primaryKey 、缺  foreignKeys 。
+name  的大小写保留； title / description / example / rdfType  等元数据。
+Data Package 的 package 级  name  是 RECOMMENDED 而非 required；package 级其他元数据均可缺省。
+字段名不套用 resource name 的小写正则：resource  name  才有 “lowercase alphanumeric + . - _” 要求；字段  name  只要求存在，SHOULD 唯一。
+3.4 SHOULD 级：建议提供 strict / lenient 两档, Value: 3
+3.4 SHOULD 级：建议提供 strict / lenient 两档
+字段名重复（大小写不敏感）。
+fields  顺序/数量与 CSV 表头不一致。
+FK 目标字段非 PK/非 unique。
+package 级  name  大写或含非法字符（正文说 “MUST be lower-case”，若出现应拒绝）。
+未知约束/未知 format：规范明确 “Implementations SHOULD report an error if an attempt is made to evaluate a value against an unsupported constraint” → 在 加载描述符阶段 报错最好，不要等到逐行校验才报，更不要跳过。
+4. 十个边界测试（输入 / 预期）, Value: 2
+4. 十个边界测试（输入 / 预期）
+记号：schema 用 JSON 片段；输入行默认是 CSV 物理字符串数组； E_CAST / E_REQUIRED / E_PK / E_FK / E_SCHEMA  为建议错误类别。 [null]  仅用于 inline JSON data。
+#
+Schema 关键配置
+输入
+预期
+1
+{"fields":[{"name":"s","type":"string"}]}
+（默认 missingValues）
+[""]
+逻辑 
+[null]
+；若 
+s
+ 加 
+required:true
+ → 
+E_REQUIRED
+。证明默认 
+[""]
+ 先于 cast。
+2
+{"missingValues":[],"fields":[{"name":"s","type":"string","constraints":{"required":true}}]}
+[""]
+逻辑 
+[""]
+，合法。证明 
+[]
+ 关闭转换，
+required
+ 只测 null。
+3
+{"missingValues":["NA"],"fields":[{"name":"n","type":"number"}]}
+["NA"]
+；
+[""]
+；
+["NaN"]
+[null]
+；
+E_CAST
+（
+""
+ 已不再默认变 null）；
+[NaN]
+（合法特殊值，非 missing）。证明自定义列表替换默认。
+4
+{"missingValues":[],"fields":[{"name":"s","type":"string","constraints":{"required":true}}]}
+[""]
+；
+[null]
+（inline JSON）
+[""]
+ 合法；
+[null]
+ → 
+E_REQUIRED
+。证明 
+"" ≠ null
+。
+5
+{"fields":[{"name":"id","type":"number"}],"primaryKey":"id"}
+[[""]]
+；
+[["1"],["1.0"]]
+；
+[["1"],["2"]]
+E_PK
+（null）；
+E_PK
+（逻辑值 1.0 重复）；合法。证明 PK 非空 + cast 后唯一。
+6
+{"fields":[{"name":"a","type":"string"},{"name":"b","type":"number"}],"primaryKey":["a","b"]}
+[["x","1"],["x","1.0"]]
+；
+[["x","1"],["y","1"]]
+；
+[["x",""],["x","2"]]
+E_PK
+（元组重复）；合法；
+E_PK
+（
+b
+ 为 null）。证明复合键按元组比较。
+7
+{"fields":[{"name":"n","type":"integer"}]}
+接受 
+"210"
+、
+"-42"
+、
+""
+；拒绝 
+"1.0"
+、
+"1E3"
+、
+"1,000"
+、
+" 1"
+、
+"0x10"
+210
+、
+-42
+、
+null
+；拒绝项 → 
+E_CAST
+。
+8
+{"fields":[{"name":"x","type":"number"}]}
+接受 
+"210"
+、
+"-1.5"
+、
+"1E3"
+、
+"NaN"
+、
+"INF"
+、
+"nan"
+；拒绝 
+"1,000"
+、
+" 1"
+、
+"1.0.0"
+、
+"€1"
+210.0
+、
+-1.5
+、
+1000.0
+、
+NaN
+、
++∞
+、
+NaN
+；拒绝项 → 
+E_CAST
+。
+9
+{"fields":[{"name":"b","type":"boolean"}]}
+接受 
+"true"
+、
+"TRUE"
+、
+"1"
+、
+"false"
+、
+"FALSE"
+、
+"0"
+、
+""
+；拒绝 
+"t"
+、
+"yes"
+、
+"2"
+、
+"TRUE "
+依次 
+true,true,true,false,false,false,null
+；拒绝项 → 
+E_CAST
+。
+10
+{"fields":[{"name":"id","type":"number"},{"name":"parent","type":"number"}],"foreignKeys":[{"fields":"parent","reference":{"resource":"","fields":"id"}}]}
+行 
+["1",""],["2","1"]
+；行 
+["1",""],["2","3"]
+；
+reference:{resource:"other"}
+；外层 
+fields:["a","b"]
+ + 
+reference.fields:"x"
+第一组合法（null FK 视为无引用，策略）；第二组严格模式 
+E_FK
+（悬空 3）；第三组 
+E_SCHEMA
+（未知资源，或单表 API 报 unsupported）；第四组 
+E_SCHEMA
+（类型/长度不匹配）。
+补充说明：
+测试 1 的期望依赖 §5.1 的取舍：如果最终决定“string 类型默认不把  ""  变 null”，则该行期望改为  [""] ，同时测试 2 仍保持  [""] ； 必须二选一并固定 。
+测试 5/6 用  number  是为了避免  integer  对  "+42" / "007"  的词法空白。
+建议所有数据级错误携带：行号、字段名、原始物理值、是否命中  missingValues 、cast 目标类型。
+5. 不确定处与规范内部矛盾（必须显式记录）, Value: 2
+5. 不确定处与规范内部矛盾（必须显式记录）
+#
+问题
+规范位置
+建议
+1
+missingValues  默认对 string 是否生效
+：正文说默认 
+[""]
+ 全局生效；
+table-schema.json
+ 的 
+context
+ 却说 “For string type fields there is no default for missingValue (for string fields the empty string 
+''
+ is a valid value)”。
+ vs 
+以正文为准（全局 
+[""]
+）最贴近 v1 文本；但这是高影响决策，必须写进 README 并用测试固定。若要保留 string 空串，必须声明这是有意的子集偏离。
+2
+required
+ 与空串：JSON Schema 各类型的 
+constraints.required.context
+ 说 “An empty string is considered to be a missing value”，但 
+missingValues: []
+ 时空串又不转换。
+坚持“required 只判 null”；
+missingValues: []
+ + string 空串应通过。
+3
+unique
+ 是否适用于 boolean：正文表格 “Applies to: All”，但 boolean 的 JSON Schema 没有 
+unique
+。
+ vs table-schema.json
+子集二选一：支持全部类型（按正文）或对 boolean 拒绝 
+unique
+（按 JSON Schema）；建议按正文，成本低。
+4
+unique: true
+ 时多个 null 是否算重复
+规范未规定
+建议明确：多个 null 视为互不重复（SQL 语义），或一律拒绝 null；写测试。
+5
+PK 字段名匹配是否大小写不敏感；
+name
+ 唯一性 “SHOULD NOT be case sensitive” 不是 MUST
+、
+建议统一策略并文档化；严格模式对大小写不同但“看起来同名”的字段给 warning。
+6
+FK 悬空引用、null FK、目标字段非 unique：规范只定义结构，没有校验 MUST
+定义 strict/permissive 两档；默认 strict 报 
+E_FK
+；null 视为无引用。
+7
+number
+ 词法边界：
+".5"
+、
+"5."
+、
+"+"
+、前导零、空白、指数大小写（正文只写 “an E”）
+以 XML Schema decimal 为参照；对未覆盖形式在子集文档中明确接受/拒绝，并写测试。
+8
+integer
+ 词法：正文只说 “standard way for any valid integer”，无正式正则；
+"+42"
+、
+"007"
+ 是否合法
+选定一种（推荐：可选 
++
+/
+-
+、允许前导零，符合 XML Schema integer），并测试锁定。
+9
+boolean
+ 自定义 
+trueValues
+/
+falseValues
+ 是替换还是扩展；两列表重叠怎么办
+按替换实现（JSON Schema 
+default
+ 语义）；加载时拒绝重叠；文档化。
+10
+顶层 Table Schema 可为 string（JSON Schema 
+type: ["string","object"]
+），但正文说 “descriptor MUST be a JSON object”；DP resource 的 
+schema
+ 允许 string
+table-schema.json vs 
+、
+子集只接受 inline object；遇到 string 报 
+Unsupported
+（不要静默当对象解析）。
+11
+Data Package package 级 
+name
+ 的模式：正文只允许小写字母数字加 
+.
+/
+-
+/
+_
+，JSON Schema 还允许 
+/
+ vs data-package.json
+按更严格的正文（不含 
+/
+）实现；遇到 
+/
+ 报错。
+12
+数值范围/精度、
+NaN
+ 与 
+minimum
+/
+maximum
+/
+enum
+ 的比较、逻辑值 JSON 序列化
+规范未规定
+显式定义溢出、精度、NaN 比较和序列化策略，避免“看起来通过”。
+13
+两份 v1 页面更新时间不同（DP 2017-05-02，TS 2021-10-05），并非同一冻结快照
+页面元数据
+在 README 标注依据的具体 URL 与版本日期，避免笼统写 “v1 compliant”。
+另外： bareNumber: false  的“剥离任意前后非数字字符”算法（例如  "EUR 95"  中间有空格）没有精确规则，属于规范空白；子集若支持，必须定义算法或直接拒绝该属性。
+6. 工作区与合规声明, Value: 2
+6. 工作区与合规声明
+当前工作区目录 ： [local collaboration workspace] （仅报告此路径）。
+本轮未修改或新增工作区文件，未创建仓库、未发布包；仅通过 HTTP 读取  specs.frictionlessdata.io  的公开规范页面与 JSON Schema。
+未切换模型，会话仍按当前 Flash 模型运行。
+以上是面向“Data Package v1 + Table Schema v1 明确子集”的审查，不宣称完整 Frictionless 兼容；下一轮可以据此把 schema 校验边界与测试表拆成实现任务。
+18:11

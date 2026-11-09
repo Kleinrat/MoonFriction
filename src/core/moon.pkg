@@ -1,0 +1,9 @@
+import {
+  "moonbitlang/core/json",
+  "moonbit-community/NyaCSV" @csv,
+  "moonbitlang/core/string",
+}
+
+options(
+  warn_list: "-79",
+)

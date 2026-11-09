@@ -1,0 +1,2 @@
+# Optional test dependency, never required by the MoonBit library or CLI.
+frictionless==5.21.0

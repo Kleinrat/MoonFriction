@@ -1,0 +1,5 @@
+import {
+  "Kleinrat/frictionless/src/core",
+}
+
+pkgtype(kind: "executable")

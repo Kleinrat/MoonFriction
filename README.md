@@ -4,7 +4,9 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-首版模块名为 `Kleinrat/frictionless`，版本为 `0.1.0`。支持范围是明确子集，不宣称完整标准兼容。
+已发布 [Kleinrat/frictionless@0.1.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.0)。支持范围是明确子集，不宣称完整标准兼容。
+
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-09.md) · [发布验证](docs/RELEASE-0.1.0.md)
 
 ## 能做什么
 
@@ -43,6 +45,21 @@ node scripts/cli.mjs validate examples/sensors/datapackage.json
 
 ## 作为 MoonBit 库使用
 
+在已有 MoonBit 项目中安装：
+
+```sh
+moon update
+moon add Kleinrat/frictionless@0.1.0
+```
+
+在调用包的 `moon.pkg` 中加入：
+
+```moonbit
+import {
+  "Kleinrat/frictionless/src/core",
+}
+```
+
 公共包路径为 `Kleinrat/frictionless/src/core`。文件 I/O 不进入核心库；调用者可以提供从任意来源获得的表头和原始字符串记录。
 
 ```moonbit
@@ -68,7 +85,7 @@ API 主入口：
 | `validate_primary_key` / `validate_foreign_key` | 检查类型转换后的键 |
 | `validate_package` | 组合多表与关系校验 |
 
-仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。独立调用测试通过 Moon workspace 本地成员依赖验证公共 API。公开注册表安装情况以发布验证记录为准。
+仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。独立调用测试覆盖本地 workspace 依赖；0.1.0 发布后，另用全新项目从 Mooncakes 下载、编译并运行公共 API 示例，结果通过。
 
 ## 测试与交叉验证
 

@@ -4,7 +4,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-目前是首版开发基线，尚未发布到 Mooncakes。支持范围是明确子集，不宣称完整标准兼容。
+首版模块名为 `Kleinrat/frictionless`，版本为 `0.1.0`。支持范围是明确子集，不宣称完整标准兼容。
 
 ## 能做什么
 
@@ -23,6 +23,7 @@
 需要 MoonBit、Node.js 22+。当前验证：`moonc 0.10.20`。CI 检查编译器不低于赛事要求的 0.10.16；并不表示所有旧工具链均已测试。
 
 ```sh
+moon update
 sh scripts/build.sh
 node scripts/cli.mjs inspect examples/shop/datapackage.json
 node scripts/cli.mjs validate examples/shop/datapackage.json
@@ -67,7 +68,7 @@ API 主入口：
 | `validate_primary_key` / `validate_foreign_key` | 检查类型转换后的键 |
 | `validate_package` | 组合多表与关系校验 |
 
-仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。包尚未发布；独立调用通过 Moon workspace 本地成员依赖测试，不能将此描述成已从 Mooncakes 安装。
+仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。独立调用测试通过 Moon workspace 本地成员依赖验证公共 API。公开注册表安装情况以发布验证记录为准。
 
 ## 测试与交叉验证
 

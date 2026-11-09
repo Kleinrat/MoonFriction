@@ -25,6 +25,7 @@ jobs:
           moon fmt --check
       - name: Check, build and test
         run: |
+          moon update
           sh scripts/build.sh
           moon test --target js
           moon run src/main --target js

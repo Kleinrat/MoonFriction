@@ -122,8 +122,7 @@ integer 使用有符号64位整数；number 使用有限 binary64。对超出精
 - `src/core`：MoonBit 数据模型、描述符、转换、约束、键与 CSV 适配。
 - `src/api`：供 CLI 调用的 JSON 边界。
 - `scripts`：I/O、构建、独立调用和交叉验证。
-- `reviews`：DeepSeek Harness 的独立规范与代码审查。
+- `reviews`：规范审查、代码审查和问题修复记录。
 
 原创代码采用 [MIT](LICENSE)。CSV 解析复用 NyaCSV 0.3.4（Apache-2.0），参考 [来源与许可](NOTICE.md)。这是新实现，不是 Python Frictionless Framework 的移植。
 
-Codex 负责实现、修复与集成；DeepSeek Harness 的 DeepSeek-V4.1-Flash（1017）负责独立规范和代码审查。审查发现须由主代理复现并验证，不以模型结论代替测试。

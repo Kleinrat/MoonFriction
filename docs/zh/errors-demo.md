@@ -1,15 +1,126 @@
-# 三个可以复现的错误
+# 四种错误：检查、修复、再检查
 
-先完成[准备步骤](getting-started.md)。以下故意无效的数据包只用于演示；命令退出码1是预期结果。
+先完成[入门准备](getting-started.md)。所有修改只在临时副本中进行，仓库坏包保持不变。命令退出1表示预期的数据错误。每个代码块的预期退出码由 CI 自动验证。
 
+<!-- test: exit=0 -->
 ```sh
-node scripts/explain.mjs examples/broken-type/datapackage.json
-node scripts/explain.mjs examples/broken-primary-key/datapackage.json
-node scripts/explain.mjs examples/broken-foreign-key/datapackage.json
+export MOONFRICTION_DEMO="${MOONFRICTION_DEMO:-$(mktemp -d)}"
 ```
 
-1. broken-type：orders.csv 第1条数据的 quantity 填了 two。应出现 type；复制到临时目录后改为2，再检查。
-2. broken-primary-key：products.csv 两条记录的 id 都为1。应出现 primary-key-duplicate，且订单引用2也不存在，可能同时出现 foreign-key。把第2条商品编号改为2，再检查。
-3. broken-foreign-key：orders.csv 第1条数据引用商品999，商品表只有1和2。应出现 foreign-key；将999改为1，再检查。
+## type：预期 type
 
-修改请在临时副本中进行，保留仓库中的坏包作为回归样例。修正后应退出0并显示检查通过。自动验证：`node scripts/test_beginner.mjs`，CI 同时检查 JSON 诊断码和中文入口退出码。
+<!-- test: exit=0 -->
+```sh
+cp -R examples/broken-type "$MOONFRICTION_DEMO/type"
+```
+
+<!-- test: exit=1 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/type/datapackage.json"
+```
+
+修复副本中的值，再检查。主键重复样例也可能伴随外键错误。
+
+<!-- test: exit=0 -->
+```sh
+python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ["MOONFRICTION_DEMO"]) / "type/orders.csv"
+p.write_text(p.read_text().replace('two', '2'), encoding="utf-8")
+PY
+```
+
+<!-- test: exit=0 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/type/datapackage.json"
+```
+
+## primary-key：预期 primary-key-duplicate
+
+<!-- test: exit=0 -->
+```sh
+cp -R examples/broken-primary-key "$MOONFRICTION_DEMO/primary-key"
+```
+
+<!-- test: exit=1 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/primary-key/datapackage.json"
+```
+
+修复副本中的值，再检查。主键重复样例也可能伴随外键错误。
+
+<!-- test: exit=0 -->
+```sh
+python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ["MOONFRICTION_DEMO"]) / "primary-key/products.csv"
+p.write_text(p.read_text().replace('1,钢笔', '2,钢笔'), encoding="utf-8")
+PY
+```
+
+<!-- test: exit=0 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/primary-key/datapackage.json"
+```
+
+## foreign-key：预期 foreign-key
+
+<!-- test: exit=0 -->
+```sh
+cp -R examples/broken-foreign-key "$MOONFRICTION_DEMO/foreign-key"
+```
+
+<!-- test: exit=1 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/foreign-key/datapackage.json"
+```
+
+修复副本中的值，再检查。主键重复样例也可能伴随外键错误。
+
+<!-- test: exit=0 -->
+```sh
+python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ["MOONFRICTION_DEMO"]) / "foreign-key/orders.csv"
+p.write_text(p.read_text().replace('999', '1'), encoding="utf-8")
+PY
+```
+
+<!-- test: exit=0 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/foreign-key/datapackage.json"
+```
+
+## header：预期 header
+
+<!-- test: exit=0 -->
+```sh
+cp -R examples/broken-header "$MOONFRICTION_DEMO/header"
+```
+
+<!-- test: exit=1 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/header/datapackage.json"
+```
+
+修复副本中的值，再检查。主键重复样例也可能伴随外键错误。
+
+<!-- test: exit=0 -->
+```sh
+python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ["MOONFRICTION_DEMO"]) / "header/products.csv"
+p.write_text(p.read_text().replace('id,wrong', 'id,title'), encoding="utf-8")
+PY
+```
+
+<!-- test: exit=0 -->
+```sh
+node scripts/explain.mjs "$MOONFRICTION_DEMO/header/datapackage.json"
+```
+
+所有修复完成后可自行删除临时副本。教程不会自动清洗你的源数据。

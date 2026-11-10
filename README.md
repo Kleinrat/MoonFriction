@@ -1,14 +1,14 @@
 # MoonFriction
 
-第一次接触？先看[中文入门](docs/zh/getting-started.md)和[三个错误演示](docs/zh/errors-demo.md)。
+第一次接触？先看[中文入门](docs/zh/getting-started.md)和[四种错误演示](docs/zh/errors-demo.md)。
 
 **MoonBit 原生的 Frictionless Data Package v1 / Table Schema v1 子集实现。**
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-当前版本 [Kleinrat/frictionless@0.1.1](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.1)。支持范围是明确子集，不宣称完整标准兼容。
+当前版本 [Kleinrat/frictionless@0.1.2](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.2)。支持范围是明确子集，不宣称完整标准兼容。
 
-[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-09.md) · [发布验证](docs/RELEASE-0.1.1.md)
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-09.md) · [发布验证](docs/RELEASE-0.1.2.md)
 
 ## 能做什么
 
@@ -51,7 +51,7 @@ node scripts/cli.mjs validate examples/sensors/datapackage.json
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.1.1
+moon add Kleinrat/frictionless@0.1.2
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -97,6 +97,8 @@ sh scripts/build.sh
 moon test --target js
 node scripts/test_host.mjs
 node scripts/test_beginner.mjs
+node scripts/check_diagnostics.mjs
+node scripts/test_tutorial.mjs
 python3 scripts/test_embedding.py
 ```
 
@@ -108,7 +110,7 @@ python3 -m venv .venv-reference
 .venv-reference/bin/python scripts/test_reference.py
 ```
 
-当前32项 MoonBit 测试通过；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；独立 MoonBit 调用项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
+当前32项 MoonBit 测试通过；中文说明覆盖23种已发现的诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；独立 MoonBit 调用项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
 
 ## 兼容性与边界
 

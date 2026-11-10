@@ -30,6 +30,7 @@ jobs:
           moon test --target js
           moon run src/main --target js
           node scripts/test_host.mjs
+          node scripts/test_beginner.mjs
           python scripts/test_embedding.py
       - name: Reference interoperability
         run: |

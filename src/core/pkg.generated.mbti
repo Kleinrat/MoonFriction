@@ -13,6 +13,8 @@ pub fn cast_json_cell(@json.Json, FieldType, Array[String]) -> Result[Cell, Stri
 
 pub fn field(String, FieldType) -> Field
 
+pub fn infer_table_schema(Array[String], Array[Array[String]], sample_limit? : Int32, missing_values? : Array[String]) -> SchemaInference
+
 pub fn input_from_csv(String, String) -> Result[InputTable, String]
 
 pub fn input_from_json(String, String) -> Result[JsonInputTable, String]
@@ -89,6 +91,12 @@ pub(all) struct ForeignKey {
   reference_fields : Array[String]
 }
 
+#derive(@debug.Debug, @json.ToJson)
+pub(all) struct InferenceHint {
+  field : String
+  message : String
+}
+
 #derive(@debug.Debug)
 pub(all) struct InputTable {
   name : String
@@ -124,6 +132,14 @@ pub(all) struct Resource {
   missing_values : Array[String]
   primary_key : Array[String]
   foreign_keys : Array[ForeignKey]
+}
+
+#derive(@debug.Debug)
+pub(all) struct SchemaInference {
+  schema : TableSchema
+  sampled_rows : Int32
+  total_rows : Int32
+  hints : Array[InferenceHint]
 }
 
 #derive(@debug.Debug)

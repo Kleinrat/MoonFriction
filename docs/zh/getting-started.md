@@ -64,6 +64,12 @@ node scripts/explain.mjs "$MOONFRICTION_DEMO/exported/datapackage.json"
 
 记录号从表头后的第1条数据起算，并非始终等于文本文件行号。其他错误保留原始代码和原因；不支持的功能会拒绝，不算检查通过。
 
+## 继续使用
+
+- [独立 Table Schema：不建数据包校验一张表](standalone-schema.md)
+- [JSON 批量行输入](json-input.md)
+- [从 CSV 生成规则草稿](inference.md)
+
 ## 你可以参与
 
 复制 shop 到临时目录，用自己的合成数据替换商品名；预测检查结果再运行。记录“输入、期望、实际结果、哪里看不懂”，就是可用于改进项目的反馈。不要填写个人隐私。

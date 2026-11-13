@@ -2,6 +2,8 @@
 package "Kleinrat/frictionless/src/api"
 
 // Values
+pub fn infer_json(String) -> String
+
 pub fn inspect_json(String) -> String
 
 pub fn validate_json(String) -> String

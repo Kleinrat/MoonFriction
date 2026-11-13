@@ -40,4 +40,23 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
     subprocess.run(['node', str(ROOT / 'scripts/cli.mjs'), 'export', str(ROOT / 'examples/shop/datapackage.json'), str(exported)], check=True, capture_output=True)
     assert frictionless.Package(str(exported / 'datapackage.json')).validate().valid
     print('exported-package-reference-import PASS')
+
+    # Generated draft -> validate/export -> official tool reads it.
+    inferred = work / 'inferred'
+    inferred.mkdir()
+    inferred_csv = inferred / 'items.csv'
+    inferred_csv.write_text(
+        'id,name,price,active,sku,note\n'
+        '001,Pen,1.50,true,ABC-1,\n'
+        '002,Notebook,2,false,ABC-2,hello\n',
+        encoding='utf-8',
+    )
+    inferred_descriptor = inferred / 'datapackage.json'
+    subprocess.run(
+        ['node', str(ROOT / 'scripts/infer.mjs'), str(inferred_csv), '--out', str(inferred_descriptor)],
+        check=True, capture_output=True, text=True,
+    )
+    generated = frictionless.Package(str(inferred_descriptor))
+    assert generated.validate().valid, generated.validate().to_dict()
+    print('inferred-draft-reference-import PASS')
 print('Reference tool:', frictionless.__version__)

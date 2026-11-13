@@ -31,6 +31,7 @@ jobs:
           moon run src/main --target js
           node scripts/test_host.mjs
           node scripts/test_beginner.mjs
+          node scripts/test_infer.mjs
           node scripts/check_diagnostics.mjs
           node scripts/test_tutorial.mjs
           python scripts/test_embedding.py

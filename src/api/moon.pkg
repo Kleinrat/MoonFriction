@@ -5,6 +5,9 @@ import {
 
 options(
   link: {
-    "js": { "exports": [ "inspect_json", "validate_json" ], "format": "esm" },
+    "js": {
+      "exports": [ "inspect_json", "validate_json", "infer_json" ],
+      "format": "esm",
+    },
   },
 )

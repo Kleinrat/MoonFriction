@@ -6,9 +6,9 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-当前版本 [Kleinrat/frictionless@0.1.2](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.2)。支持范围是明确子集，不宣称完整标准兼容。
+Mooncakes 当前发布版是 [Kleinrat/frictionless@0.1.2](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.2)。本仓库 `main` 还包含尚未发布的独立 Table Schema、JSON 行输入和草稿推断 API；发布前请以仓库源码或 workspace 依赖使用。支持范围是明确子集，不宣称完整标准兼容。
 
-[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-09.md) · [发布验证](docs/RELEASE-0.1.2.md)
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.1.2.md)
 
 ## 能做什么
 
@@ -19,6 +19,7 @@
 - 输出资源名、逻辑记录号、字段名和错误代码。
 - 导出新目录，保留描述信息和 CSV 原始内容；拒绝覆盖已有目标。
 - 可作为纯 MoonBit 库调用；Node.js CLI 只负责本地文件 I/O 和参数。
+- 从 CSV 表头和样本生成保守、可编辑的 Table Schema 草稿，并明确提示采样范围与歧义。
 
 三个合成示例：商品与订单、学生与成绩、传感器与读数。它们用于验证数据交换能力，不代表真实用户采用。
 
@@ -73,6 +74,14 @@ let report = @core.validate_json_table("books", fields, input)
 
 规则与 CSV 对等：`null` 和缺失属性都视为 Missing；原生数字只用于 integer/number，原生布尔只用于 boolean，其他标量不会被偷偷字符串化；对象行出现未声明属性会报 `extra-property`。字符串值仍使用与 CSV 相同的严格词法。批量输入完全在内存中处理，不做流式或固定内存承诺。详见[JSON 批量输入](docs/zh/json-input.md)。
 
+## 从 CSV 生成规则草稿
+
+```sh
+node scripts/infer.mjs examples/shop/products.csv
+```
+
+草稿只包含可推断的字段类型，不会猜主键或 `required`，也不会修改原 CSV；目标描述文件已存在时拒绝覆盖。采样范围、前导零、混合类型和空样本都会给出提示。生成后请人工编辑，再 `validate` 和 `export`。详见[从 CSV 生成草稿](docs/zh/inference.md)。
+
 ## 作为 MoonBit 库使用
 
 在已有 MoonBit 项目中安装：
@@ -111,12 +120,14 @@ API 主入口：
 | `parse_descriptor` | 读取标准描述文件，验证当前支持范围 |
 | `parse_table_schema` / `validate_table_schema` | 不建数据包，直接解析并校验单表的 Table Schema |
 | `input_from_csv` | 将默认 CSV 方言转换成表输入 |
+| `input_from_json` / `validate_json_table` | 批量 JSON 行输入与类型化校验 |
+| `infer_table_schema` | 从表头和样本生成保守的规则草稿 |
 | `cast_cell` | 在缺失值匹配之后转换逻辑类型 |
 | `validate_table` | 校验字段及行数据 |
 | `validate_primary_key` / `validate_foreign_key` | 检查类型转换后的键 |
 | `validate_package` | 组合多表与关系校验 |
 
-仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。独立调用测试覆盖本地 workspace 依赖；0.1.0 发布后，另用全新项目从 Mooncakes 下载、编译并运行公共 API 示例，结果通过。
+仅在对应报告 `valid()` 为真后使用逻辑表进行后续处理。独立调用测试在临时 workspace 项目中编译三个消费者（包 API、独立 schema、JSON 行）；0.1.2 发布后的旧 API 消费者验证仍保留在发布记录中。
 
 ## 测试与交叉验证
 
@@ -126,6 +137,7 @@ sh scripts/build.sh
 moon test --target js
 node scripts/test_host.mjs
 node scripts/test_beginner.mjs
+node scripts/test_infer.mjs
 node scripts/check_diagnostics.mjs
 node scripts/test_tutorial.mjs
 python3 scripts/test_embedding.py
@@ -139,7 +151,7 @@ python3 -m venv .venv-reference
 .venv-reference/bin/python scripts/test_reference.py
 ```
 
-当前32项 MoonBit 测试通过；中文说明覆盖23种已发现的诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；独立 MoonBit 调用项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
+当前50项 MoonBit 测试通过；中文说明覆盖26种诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；三个独立 MoonBit 消费者项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包和自动推断草稿能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
 
 ## 兼容性与边界
 

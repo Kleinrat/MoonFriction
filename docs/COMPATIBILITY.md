@@ -11,6 +11,7 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 - Explicit missingValues arrays, including an empty array; omitted missingValues means [""]. Markers match before type conversion. Explicit null descriptor properties are not treated as omission.
 - Single and composite primary keys; named-resource and self-reference foreign keys. Typed comparisons happen after casting.
 - Original descriptor metadata and original CSV bytes retained on export.
+- Draft inference (`infer_table_schema` / `scripts/infer.mjs`) samples the first 100 CSV rows by default and only emits supported field types. It never guesses `required`/`unique`/primary keys, never modifies source data, and refuses to overwrite an existing descriptor. Leading-zero identifiers and mixed/empty samples fall back to string with hints.
 - Batch JSON rows (`input_from_json` / `validate_json_table` / `TableSchema::validate_json`): a top-level array of arrays (schema field order) or objects (field-name order independent). JSON null and absent object properties are both Missing; extra object properties are `extra-property` errors; native numbers/booleans are accepted only for their matching field kinds and are never stringified into other kinds. Fully materialized; no streaming claim.
 
 ## Explicit policies / numeric limitations

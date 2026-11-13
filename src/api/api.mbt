@@ -74,3 +74,94 @@ pub fn validate_json(text : String) -> String {
       ),
     } : Json).stringify()
 }
+
+///|
+#derive(@json.FromJson)
+priv struct InferInput {
+  package_name : String
+  resource_name : String
+  path : String
+  csv : String
+  sample_limit : Int32
+}
+
+///|
+fn field_type_json_name(kind : @core.FieldType) -> String {
+  match kind {
+    Text => "string"
+    Integer => "integer"
+    Number => "number"
+    Boolean => "boolean"
+  }
+}
+
+///|
+/// Infer a draft descriptor from CSV text and return it as JSON.
+///
+/// This is a thin boundary: all inference happens in MoonBit core. The caller
+/// receives a descriptor plus explicit sampling/ambiguity hints. The input CSV
+/// is never modified, and this function does not write files.
+pub fn infer_json(text : String) -> String {
+  let input : InferInput = @json.from_json(@json.parse(text)) catch {
+    _ =>
+      return (
+        {
+          "ok": false,
+          "error": "Expected package_name, resource_name, path, csv and sample_limit",
+        } : Json).stringify()
+  }
+  let table = match @core.input_from_csv(input.resource_name, input.csv) {
+    Ok(table) => table
+    Err(message) =>
+      return (
+        {
+          "ok": false,
+          "errors": [
+            {
+              "code": "csv",
+              "resource": input.resource_name,
+              "message": message,
+            },
+          ],
+        } : Json).stringify()
+  }
+  let inference = @core.infer_table_schema(
+    table.header,
+    table.rows,
+    sample_limit=input.sample_limit,
+  )
+  let field_jsons = inference.schema.fields.map(f => {
+    ({ "name": f.name, "type": field_type_json_name(f.kind) } : Json)
+  })
+  let schema_json : Json = ({ "fields": @json.to_json(field_jsons) } : Json)
+  let descriptor : Json = (
+    {
+      "name": input.package_name,
+      "resources": [
+        {
+          "name": input.resource_name,
+          "path": input.path,
+          "format": "csv",
+          "schema": schema_json,
+        },
+      ],
+    } : Json)
+  match @core.parse_descriptor(descriptor.stringify()) {
+    Err(errors) =>
+      (
+        {
+          "ok": false,
+          "errors": @json.to_json(errors),
+          "hints": @json.to_json(inference.hints),
+        } : Json).stringify()
+    Ok(_) =>
+      (
+        {
+          "ok": true,
+          "descriptor": descriptor,
+          "hints": @json.to_json(inference.hints),
+          "sampled_rows": inference.sampled_rows,
+          "total_rows": inference.total_rows,
+        } : Json).stringify()
+  }
+}

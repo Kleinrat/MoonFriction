@@ -33,4 +33,4 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-embedding-') as temporary:
             assert 'JSON array rows valid: true' in result.stdout, result.stdout
             assert 'JSON object rows valid: true' in result.stdout, result.stdout
             assert 'Extra property code: extra-property' in result.stdout, result.stdout
-    print('Independent MoonBit consumers: package and standalone public APIs compiled and ran successfully')
+    print('Independent MoonBit consumers: package, standalone schema and JSON row APIs compiled and ran successfully')

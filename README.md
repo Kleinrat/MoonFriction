@@ -45,6 +45,22 @@ node scripts/cli.mjs validate examples/sensors/datapackage.json
 
 例如，订单引用不存在的商品时，报告 `foreign-key` 错误，而不是自动删除或改写记录。
 
+## 独立校验一张表（无需 Data Package）
+
+Table Schema 也可以脱离 `datapackage.json` 单独使用。`parse_table_schema` 解析字段、`missingValues`、主键和自引用外键，`validate_table_schema` 只校验这一张表；跨表外键不会假装已经解析，而会返回 `foreign-key-scope`。
+
+```moonbit
+let schema = @core.parse_table_schema(
+  #|{"fields":[{"name":"id","type":"integer"},{"name":"title"}],"primaryKey":"id"}
+).unwrap()
+let report = @core.validate_table_schema(
+  "books", schema, ["id", "title"], [["1", "MoonBit"], ["1", "重复"]],
+)
+println(report.valid()) // false：主键重复
+```
+
+可运行的全新消费者见 [`examples/standalone-consumer`](examples/standalone-consumer)；`scripts/test_embedding.py` 会把它作为独立项目编译。完整说明见[独立 Table Schema](docs/zh/standalone-schema.md)。
+
 ## 作为 MoonBit 库使用
 
 在已有 MoonBit 项目中安装：
@@ -81,6 +97,7 @@ API 主入口：
 | 函数 | 用途 |
 |---|---|
 | `parse_descriptor` | 读取标准描述文件，验证当前支持范围 |
+| `parse_table_schema` / `validate_table_schema` | 不建数据包，直接解析并校验单表的 Table Schema |
 | `input_from_csv` | 将默认 CSV 方言转换成表输入 |
 | `cast_cell` | 在缺失值匹配之后转换逻辑类型 |
 | `validate_table` | 校验字段及行数据 |

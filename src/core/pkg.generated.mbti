@@ -15,6 +15,8 @@ pub fn input_from_csv(String, String) -> Result[InputTable, String]
 
 pub fn parse_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
 
+pub fn parse_table_schema(String) -> Result[TableSchema, Array[Diagnostic]]
+
 pub fn safe_resource_path(String) -> Bool
 
 pub fn validate_foreign_key(Table, Array[String], Table, Array[String]) -> Array[Diagnostic]
@@ -24,6 +26,8 @@ pub fn validate_package(Descriptor, Array[InputTable]) -> PackageReport
 pub fn validate_primary_key(Table, Array[String]) -> Array[Diagnostic]
 
 pub fn validate_table(String, Array[Field], Array[String], Array[Array[String]], missing_values? : Array[String]) -> TableReport
+
+pub fn validate_table_schema(String, TableSchema, Array[String], Array[Array[String]], missing_values? : Array[String]?) -> TableReport
 
 // Errors
 
@@ -116,6 +120,15 @@ pub(all) struct TableReport {
   errors : Array[Diagnostic]
 }
 pub fn TableReport::valid(Self) -> Bool
+
+#derive(@debug.Debug)
+pub(all) struct TableSchema {
+  fields : Array[Field]
+  missing_values : Array[String]
+  primary_key : Array[String]
+  foreign_keys : Array[ForeignKey]
+}
+pub fn TableSchema::validate(Self, String, Array[String], Array[Array[String]], missing_values? : Array[String]?) -> TableReport
 
 // Type aliases
 

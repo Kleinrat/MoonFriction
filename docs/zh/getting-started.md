@@ -38,6 +38,7 @@ node scripts/explain.mjs "$MOONFRICTION_DEMO/exported/datapackage.json"
 | descriptor | 数据包规则文件不合法 | 检查 datapackage.json 的属性、字段和资源声明。 |
 | foreign-key | 引用的记录不存在 | 对照目标表修正编号，或补充确实存在的目标记录。 |
 | foreign-key-schema | 外键规则不合法 | 核对源字段、目标资源、目标字段及字段类型。 |
+| foreign-key-scope | 跨表外键需要完整数据包 | 在数据包中使用 validate_package 校验；单表接口不会假装已解析其他资源。 |
 | header | 表头与规则不一致 | 按规则的字段名称和顺序修正 CSV 第一条记录。 |
 | input | 调用输入不合法 | 提供 descriptor 和每个资源对应的 CSV 字符串。 |
 | invalid-table | 传入的逻辑表结构不合法 | 先校验原始记录，再使用有效报告中的逻辑表。 |

@@ -5,6 +5,7 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 ## Supported
 
 - Inline schemas for named local UTF-8 CSV resources, with default comma/double-quote dialect. Blank lines are preserved as empty records; data whitespace is not trimmed.
+- Standalone Table Schema descriptors (`parse_table_schema` / `validate_table_schema`) using the same field, constraint, missing-value and primary-key semantics as inline resource schemas. Cross-table foreign keys are structurally accepted but single-table validation reports `foreign-key-scope` rather than resolving them.
 - string (default type), integer (signed 64-bit), number (finite binary64), boolean with default exact physical representations.
 - required, unique, minimum, maximum, minLength, maxLength; inapplicable constraints are descriptor errors.
 - Explicit missingValues arrays, including an empty array; omitted missingValues means [""]. Markers match before type conversion. Explicit null descriptor properties are not treated as omission.

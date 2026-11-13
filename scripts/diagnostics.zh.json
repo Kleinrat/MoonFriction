@@ -51,6 +51,10 @@
     "title": "外键规则不合法",
     "fix": "核对源字段、目标资源、目标字段及字段类型。"
   },
+  "foreign-key-scope": {
+    "title": "跨表外键需要完整数据包",
+    "fix": "在数据包中使用 validate_package 校验；单表接口不会假装已解析其他资源。"
+  },
   "input": {
     "title": "调用输入不合法",
     "fix": "提供 descriptor 和每个资源对应的 CSV 字符串。"

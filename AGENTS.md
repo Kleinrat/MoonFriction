@@ -9,5 +9,9 @@ New MoonBit implementation of a documented subset of Frictionless Data Package v
 - State unsupported specification features explicitly; never silently accept them.
 - Use independent reference-tool checks, not only self-roundtrip tests.
 
-## Concurrent work
-The Codex agent owns the implementation. DeepSeek Harness owns reviews/ and specification review/test proposals until another explicit task is assigned. Do not edit files owned by the other agent.
+## Ownership (handoff 2026-11-13)
+DeepSeek Harness now owns implementation, integration, tests, documentation and
+review follow-up by explicit user authorization. The earlier Codex handoff is
+complete; there is no concurrent source editor. Keep changes inside this
+repository. Git pushes are limited to this authorized repository; never force
+push or rewrite published history. Do not publish packages unless the user asks.

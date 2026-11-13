@@ -55,6 +55,14 @@
     "title": "跨表外键需要完整数据包",
     "fix": "在数据包中使用 validate_package 校验；单表接口不会假装已解析其他资源。"
   },
+  "extra-property": {
+    "title": "JSON 行出现未声明属性",
+    "fix": "删除多余属性，或先在 Table Schema 中声明该字段。"
+  },
+  "json-rows": {
+    "title": "JSON 行结构不符合批量输入约定",
+    "fix": "顶层传数组；元素统一为对象或统一为数组，不要混用。"
+  },
   "input": {
     "title": "调用输入不合法",
     "fix": "提供 descriptor 和每个资源对应的 CSV 字符串。"

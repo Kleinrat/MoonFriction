@@ -61,6 +61,18 @@ println(report.valid()) // false：主键重复
 
 可运行的全新消费者见 [`examples/standalone-consumer`](examples/standalone-consumer)；`scripts/test_embedding.py` 会把它作为独立项目编译。完整说明见[独立 Table Schema](docs/zh/standalone-schema.md)。
 
+## JSON 批量行输入
+
+`input_from_json` 接收顶层 JSON 数组，元素既可以按字段顺序的数组，也可以是按字段名取值的对象；对象键顺序不影响字段顺序。原生 JSON 数字/布尔不再转字符串：
+
+```moonbit
+let input = @core.input_from_json("books", #|[[1,"MoonBit"],[2,"数据"]]
+).unwrap()
+let report = @core.validate_json_table("books", fields, input)
+```
+
+规则与 CSV 对等：`null` 和缺失属性都视为 Missing；原生数字只用于 integer/number，原生布尔只用于 boolean，其他标量不会被偷偷字符串化；对象行出现未声明属性会报 `extra-property`。字符串值仍使用与 CSV 相同的严格词法。批量输入完全在内存中处理，不做流式或固定内存承诺。详见[JSON 批量输入](docs/zh/json-input.md)。
+
 ## 作为 MoonBit 库使用
 
 在已有 MoonBit 项目中安装：

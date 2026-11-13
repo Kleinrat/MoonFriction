@@ -84,6 +84,18 @@ pub fn validate_table_schema(
     rows,
     missing_values=effective_missing_values,
   )
+  finish_schema_report(name, schema, report)
+}
+
+///|
+/// Shared table-level completion for CSV and JSON single-table validation:
+/// report cross-table foreign keys, then run primary and self-reference keys on
+/// a logically valid table.
+fn finish_schema_report(
+  name : String,
+  schema : TableSchema,
+  report : TableReport,
+) -> TableReport {
   let errors : Array[Diagnostic] = []
   for e in report.errors {
     errors.push(e)
@@ -123,6 +135,24 @@ pub fn validate_table_schema(
     }
   }
   { table: report.table, errors, }
+}
+
+///|
+/// Validate a parsed JSON batch against this standalone Table Schema, including
+/// primary-key and self-reference rules. Cross-table foreign keys still report
+/// `foreign-key-scope`.
+pub fn TableSchema::validate_json(
+  self : TableSchema,
+  name : String,
+  input : JsonInputTable,
+) -> TableReport {
+  let report = validate_json_table(
+    name,
+    self.fields,
+    input,
+    missing_values=self.missing_values,
+  )
+  finish_schema_report(name, self, report)
 }
 
 ///|

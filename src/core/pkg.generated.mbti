@@ -9,9 +9,13 @@ import {
 // Values
 pub fn cast_cell(String, FieldType, Array[String]) -> Result[Cell, String]
 
+pub fn cast_json_cell(@json.Json, FieldType, Array[String]) -> Result[Cell, String]
+
 pub fn field(String, FieldType) -> Field
 
 pub fn input_from_csv(String, String) -> Result[InputTable, String]
+
+pub fn input_from_json(String, String) -> Result[JsonInputTable, String]
 
 pub fn parse_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
 
@@ -20,6 +24,8 @@ pub fn parse_table_schema(String) -> Result[TableSchema, Array[Diagnostic]]
 pub fn safe_resource_path(String) -> Bool
 
 pub fn validate_foreign_key(Table, Array[String], Table, Array[String]) -> Array[Diagnostic]
+
+pub fn validate_json_table(String, Array[Field], JsonInputTable, missing_values? : Array[String]) -> TableReport
 
 pub fn validate_package(Descriptor, Array[InputTable]) -> PackageReport
 
@@ -91,6 +97,19 @@ pub(all) struct InputTable {
 }
 
 #derive(@debug.Debug)
+pub(all) struct JsonInputTable {
+  name : String
+  mode : JsonRowMode
+  rows : Array[@json.Json]
+}
+
+#derive(@debug.Debug)
+pub(all) enum JsonRowMode {
+  ArrayRows
+  ObjectRows
+}
+
+#derive(@debug.Debug)
 pub(all) struct PackageReport {
   tables : Array[Table]
   errors : Array[Diagnostic]
@@ -129,6 +148,7 @@ pub(all) struct TableSchema {
   foreign_keys : Array[ForeignKey]
 }
 pub fn TableSchema::validate(Self, String, Array[String], Array[Array[String]], missing_values? : Array[String]?) -> TableReport
+pub fn TableSchema::validate_json(Self, String, JsonInputTable) -> TableReport
 
 // Type aliases
 

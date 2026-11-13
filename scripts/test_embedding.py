@@ -10,6 +10,7 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-embedding-') as temporary:
     for directory, source in [
         ('consumer', ROOT / 'src/main/main.mbt'),
         ('standalone', ROOT / 'examples/standalone-consumer/main.mbt'),
+        ('json', ROOT / 'examples/json-consumer/main.mbt'),
     ]:
         consumer = work / directory
         consumer.mkdir()
@@ -25,7 +26,11 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-embedding-') as temporary:
         if consumer.name == 'consumer':
             assert 'Table valid: true' in result.stdout, result.stdout
             assert 'Primary key errors: 0' in result.stdout, result.stdout
-        else:
+        elif consumer.name == 'standalone':
             assert 'Standalone valid: false' in result.stdout, result.stdout
             assert 'First code: primary-key-duplicate' in result.stdout, result.stdout
+        else:
+            assert 'JSON array rows valid: true' in result.stdout, result.stdout
+            assert 'JSON object rows valid: true' in result.stdout, result.stdout
+            assert 'Extra property code: extra-property' in result.stdout, result.stdout
     print('Independent MoonBit consumers: package and standalone public APIs compiled and ran successfully')

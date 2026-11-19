@@ -95,12 +95,28 @@ pub fn check_request(text : String) -> String {
   ).unwrap()
   let input = match @core.input_from_json("request", text) {
     Ok(v) => v
-    Err(m) => return failure(m)
+    Err(m) =>
+      return (
+        {
+          "ok": false,
+          "field_validation": "failed",
+          "business_validation": "not-run",
+          "scope": "request-fields-only",
+          "notice": "只检查申请字段；未检查物资存在、重复借用或可借库存。",
+          "error": m,
+        } : Json).stringify()
   }
   let report = schema.validate_json("request", input)
   (
     {
       "ok": report.valid(),
+      "field_validation": if report.valid() {
+        "passed"
+      } else {
+        "failed"
+      },
+      "business_validation": "not-run",
+      "notice": "只检查申请字段；未检查物资存在、重复借用或可借库存。",
       "scope": "request-fields-only; does not check asset existence, duplicate loans or stock availability",
       "errors": @json.to_json(report.errors),
     } : Json).stringify()

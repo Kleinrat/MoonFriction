@@ -1,10 +1,10 @@
 # 独立接入记录：物资借用检查工具
 
-这是维护者完成的工程接入验证，不是外部用户试用，也不是正式库存应用。核心库保持0.2.0，未新增核心API。
+这是维护者完成的工程接入验证，不是外部用户试用，也不是正式库存应用。核心库使用兼容补丁0.2.1，未新增核心API。
 
 ## 接入方式
 
-独立目录 `examples/asset-loans` 自带 moon.mod、moon.pkg 和 Node 主机；固定依赖公开注册表 `Kleinrat/frictionless@0.2.0`。自动检查将它复制到仓库外临时目录，不创建 moon.work，不借用父仓库源文件或构建产物，重新安装、检查和构建。
+独立目录 `examples/asset-loans` 自带 moon.mod、moon.pkg 和 Node 主机；固定依赖公开注册表 `Kleinrat/frictionless@0.2.1`。自动检查将它复制到仓库外临时目录，不创建 moon.work，不借用父仓库源文件或构建产物，重新安装、检查和构建。
 
 ## 可复现流程与结果
 
@@ -24,8 +24,10 @@
 | 数据完整读入 | 单文件16MiB上限；采样不等于流式读取，不用于大文件服务 |
 | 通用校验不等于业务库存引擎 | 不扣库存、不处理归还/预约/并发，也不判断历史借用数量之和 |
 
-运行验证：`python scripts/test_asset_consumer.py --reference`（需要Node22+、MoonBit和Frictionless5.21.0）；CI安装参考工具后执行。核心原有50项测试继续通过。
+运行验证：`python scripts/test_asset_consumer.py --reference`（需要Node22+、MoonBit和Frictionless5.21.0）；CI安装参考工具后执行。核心原有51项测试继续通过。
 
 ## 真实试用待办
 
 邀请实际处理物资表格的人，在干净环境照应用README操作，填写 `examples/asset-loans/FEEDBACK.md`。耗时、实际工作需求、卡点及继续使用意愿目前均未测量。优先根据反馈决定是否实现JSON包级校验；不能仅凭这次内部接入宣称需求已验证。
+
+模拟试用后修正：1/2样本不再误报只有0/1；JSON字段输出新增field_validation、business_validation与中文notice；教程使用显式临时目录模板，自动完整运行两次以检查重复运行不冲突。

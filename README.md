@@ -25,7 +25,7 @@
 
 ## 独立业务接入示例
 
-[物资借用检查工具](examples/asset-loans/README.md)是独立 MoonBit 模块，从 Mooncakes 安装0.2.0，不导入本仓库源码。覆盖规则草稿、人工确认、关联数据检查、JSON申请字段检查和导出；属于合成业务演示，尚无真实试用反馈。
+[物资借用检查工具](examples/asset-loans/README.md)是独立 MoonBit 模块，从 Mooncakes 安装0.2.1，不导入本仓库源码。覆盖规则草稿、人工确认、关联数据检查、JSON申请字段检查和导出；属于合成业务演示，尚无真实试用反馈。
 
 ## 运行
 

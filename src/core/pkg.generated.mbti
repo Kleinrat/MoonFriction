@@ -42,7 +42,7 @@ pub fn validate_table_schema(String, TableSchema, Array[String], Array[Array[Str
 // Errors
 
 // Types and methods
-#derive(Eq, @debug.Debug)
+#derive(Eq, Hash, @debug.Debug)
 pub(all) enum Cell {
   Missing
   TextValue(String)
@@ -72,6 +72,8 @@ pub(all) struct Diagnostic {
   field : String
   message : String
 }
+
+type ErrorSample
 
 #derive(@debug.Debug)
 pub(all) struct Field {
@@ -143,6 +145,20 @@ pub(all) struct Resource {
   primary_key : Array[String]
   foreign_keys : Array[ForeignKey]
 }
+
+pub(all) struct RowSummary {
+  rows : Int32
+  error_count : Int64
+  errors : Array[Diagnostic]
+}
+
+pub struct RowValidator {
+  // private fields
+}
+pub fn RowValidator::feed(Self, Array[String]) -> Unit
+pub fn RowValidator::feed_json(Self, @json.Json) -> Unit
+pub fn RowValidator::finish(Self) -> RowSummary
+pub fn RowValidator::new(String, TableSchema, Array[String], max_errors? : Int32) -> Result[Self, Array[Diagnostic]]
 
 #derive(@debug.Debug)
 pub(all) struct SchemaInference {

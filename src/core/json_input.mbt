@@ -149,42 +149,10 @@ pub fn validate_json_table(
   let field_names = fields.map(f => f.name)
   for index, item in input.rows {
     let number = index + 1
-    let values : Array[Json] = match input.mode {
-      ArrayRows =>
-        match item {
-          Array(values) => values
-          _ => {
-            errors.push(
-              issue(
-                "json-rows", name, number, "", "JSON row is not an array in array-row mode",
-              ),
-            )
-            continue
-          }
-        }
-      ObjectRows =>
-        match item {
-          Object(values) => {
-            for key, _ in values {
-              if !field_names.contains(key) {
-                errors.push(
-                  issue(
-                    "extra-property", name, number, key, "JSON object row contains an unknown property",
-                  ),
-                )
-              }
-            }
-            fields.map(f => values.get(f.name).unwrap_or(Json::null()))
-          }
-          _ => {
-            errors.push(
-              issue(
-                "json-rows", name, number, "", "JSON row is not an object in object-row mode",
-              ),
-            )
-            continue
-          }
-        }
+    let values : Array[Json] = match
+      json_row_values(item, input.mode, field_names, name, number, errors) {
+      Some(values) => values
+      None => continue
     }
     if values.length() != fields.length() {
       errors.push(
@@ -204,10 +172,69 @@ pub fn validate_json_table(
           continue
         }
       }
-      check_logical_cell(name, f, cell, number, column, output, errors)
+      check_logical_cell(
+        name,
+        f,
+        cell,
+        number,
+        f.unique &&
+        cell != Missing &&
+        output.any(prior => prior[column] == cell),
+        errors,
+      )
       logical.push(cell)
     }
     output.push(logical)
   }
   { table: { name, fields, rows: output, }, errors, }
+}
+
+///|
+fn json_row_values(
+  item : Json,
+  mode : JsonRowMode,
+  field_names : Array[String],
+  name : String,
+  number : Int32,
+  errors : Array[Diagnostic],
+) -> Array[Json]? {
+  Some(
+    match mode {
+      ArrayRows =>
+        match item {
+          Array(values) => values
+          _ => {
+            errors.push(
+              issue(
+                "json-rows", name, number, "", "JSON row is not an array in array-row mode",
+              ),
+            )
+            return None
+          }
+        }
+      ObjectRows =>
+        match item {
+          Object(values) => {
+            for key, _ in values {
+              if !field_names.contains(key) {
+                errors.push(
+                  issue(
+                    "extra-property", name, number, key, "JSON object row contains an unknown property",
+                  ),
+                )
+              }
+            }
+            field_names.map(name => values.get(name).unwrap_or(Json::null()))
+          }
+          _ => {
+            errors.push(
+              issue(
+                "json-rows", name, number, "", "JSON row is not an object in object-row mode",
+              ),
+            )
+            return None
+          }
+        }
+    },
+  )
 }

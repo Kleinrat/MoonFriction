@@ -96,8 +96,7 @@ fn check_logical_cell(
   f : Field,
   cell : Cell,
   number : Int32,
-  column : Int32,
-  output : Array[Array[Cell]],
+  duplicate : Bool,
   errors : Array[Diagnostic],
 ) -> Unit {
   if cell == Missing {
@@ -112,7 +111,7 @@ fn check_logical_cell(
         issue("enum", name, number, f.name, "Value is outside the allowed set"),
       )
     }
-    if f.unique && output.any(prior => prior[column] == cell) {
+    if duplicate {
       errors.push(
         issue("unique", name, number, f.name, "Duplicate logical value"),
       )
@@ -209,7 +208,16 @@ pub fn validate_table(
           continue
         }
       }
-      check_logical_cell(name, f, cell, number, column, output, errors)
+      check_logical_cell(
+        name,
+        f,
+        cell,
+        number,
+        f.unique &&
+        cell != Missing &&
+        output.any(prior => prior[column] == cell),
+        errors,
+      )
       logical.push(cell)
     }
     output.push(logical)

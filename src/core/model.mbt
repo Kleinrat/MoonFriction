@@ -8,7 +8,7 @@ pub(all) enum FieldType {
 }
 
 ///|
-#derive(Eq, Debug)
+#derive(Eq, Hash, Debug)
 pub(all) enum Cell {
   Missing
   TextValue(String)

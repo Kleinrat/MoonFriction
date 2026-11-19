@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.4.0 支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.4.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.4.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.5.0 新增单表逐行校验，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.5.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.5.0)。支持范围是明确子集，不宣称完整标准兼容。
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -66,6 +66,14 @@ println(report.valid()) // false：主键重复
 
 可运行的全新消费者见 [`examples/standalone-consumer`](examples/standalone-consumer)；`scripts/test_embedding.py` 会把它作为独立项目编译。完整说明见[独立 Table Schema](docs/zh/standalone-schema.md)。
 
+## 逐行检查一张表
+
+用 `RowValidator::new("orders", schema, header, max_errors=10)` 创建检查器。向 `feed` 传入一条已分列的文本记录，或向 `feed_json` 传入一个已解析的 JSON 行。JSON 行可采用数组或对象；同一次检查中的 JSON 行使用相同形状。创建时的错误（如表头不匹配）通过 `Err` 返回。
+
+`finish()` 返回独立快照，包含总记录数、错误总数和最前面的错误样本。用 `error_count == 0` 判断通过；`max_errors=0` 可以只计数。默认保留前 100 个诊断。字段校验失败时按批量校验规则仅报告字段错误；全部字段通过后才报告主键错误。
+
+只检查字段时，内存主要取决于规则、当前行和诊断样本。启用精确主键或唯一约束后，还要保留不同键值的索引。自引用和跨表外键请走批量接口。文件读取和 CSV 跨行引号解析由调用方处理；已有 CLI 仍为批量模式。[10 万行示例](examples/row-consumer/main.mbt)
+
 ## 限定状态等字段的取值
 
 例如，在字段定义中写入 `{"name":"status","type":"string","constraints":{"enum":["draft","paid"]}}`。订单状态为 `paid` 时通过，为 `void` 时报告 `enum` 及记录号和字段名。CSV 和 JSON 共用这项检查。支持字符串、整数、有限数值和布尔值；允许列表须非空，成员使用字段对应的 JSON 类型。缺失值仍由 `required` 决定。
@@ -114,7 +122,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.4.0
+moon add Kleinrat/frictionless@0.5.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

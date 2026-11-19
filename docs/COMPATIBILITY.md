@@ -15,6 +15,8 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 - Draft inference (`infer_table_schema` / `scripts/infer.mjs`) samples the first 100 CSV rows by default and only emits supported field types. It never guesses `required`/`unique`/primary keys, never modifies source data, and refuses to overwrite an existing descriptor. Leading-zero identifiers, incompatible mixed values and empty/all-missing samples fall back to string with hints; integer/decimal mixtures can infer number.
 - Batch JSON rows (`input_from_json` / `validate_json_table` / `TableSchema::validate_json`): a top-level array of arrays (schema field order) or objects (field-name order independent). JSON null and absent object properties are both Missing; extra object properties are `extra-property` errors; native numbers/booleans are accepted only for their matching field kinds and are never stringified into other kinds. Fully materialized; no streaming claim.
 
+The single-table RowValidator accepts decoded CSV records or individual JSON rows. Its field checks, exact uniqueness and primary-key checks use logical cell values. It rejects all foreign keys during construction. Diagnostic samples are bounded; exact key indexes grow with distinct keys. The file CLI and JSON array parser remain batch APIs.
+
 ## Explicit policies / numeric limitations
 
 - A required field rejects Missing; with missingValues=[] a string empty value remains a valid string.

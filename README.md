@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.5.0 新增单表逐行校验，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.5.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.5.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.6.0 新增大 CSV 文件流式校验命令，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.6.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.6.0)。支持范围是明确子集，不宣称完整标准兼容。
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -72,7 +72,20 @@ println(report.valid()) // false：主键重复
 
 `finish()` 返回独立快照，包含总记录数、错误总数和最前面的错误样本。用 `error_count == 0` 判断通过；`max_errors=0` 可以只计数。默认保留前 100 个诊断。字段校验失败时按批量校验规则仅报告字段错误；全部字段通过后才报告主键错误。
 
-只检查字段时，内存主要取决于规则、当前行和诊断样本。启用精确主键或唯一约束后，还要保留不同键值的索引。自引用和跨表外键请走批量接口。文件读取和 CSV 跨行引号解析由调用方处理；已有 CLI 仍为批量模式。[10 万行示例](examples/row-consumer/main.mbt)
+只检查字段时，内存主要取决于规则、当前行和诊断样本。启用精确主键或唯一约束后，还要保留不同键值的索引。自引用和跨表外键请走批量接口。直接检查文件可使用下方命令。[10 万行示例](examples/row-consumer/main.mbt)
+
+### 从命令行检查大 CSV（仓库源码）
+
+从仓库根目录运行，参数依次为独立 Table Schema 和带表头的 UTF-8 CSV 文件：
+
+```sh
+sh scripts/build.sh
+node scripts/cli.mjs validate-stream examples/shop/products.schema.json examples/shop/products.csv --max-errors 10
+```
+
+示例有 2 条数据，输出 `ok: true`、`rows: 2`、`error_count: 0`。命令默认只展示前 10 个数据错误，仍会统计全部错误；设为 0 可以只计数。可选 `--delimiter ';'` 或 `--delimiter tab`，单引号包裹的字段使用 `--quote "'"`。引号内换行算同一条记录。
+
+退出码 0 表示通过，1 表示规则或数据错误，2 表示命令参数、文件读取或 UTF-8 解码错误。表头或引号结构错误会停止解析并返回 `complete: false`；此时 `rows` 是已交给校验器的记录数。命令按块读文件，单条超长记录和大量不同键值仍可能占用较多内存。数据包和外键继续使用 `validate`。
 
 ## 限定状态等字段的取值
 
@@ -122,7 +135,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.5.0
+moon add Kleinrat/frictionless@0.6.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

@@ -15,7 +15,7 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 - Draft inference (`infer_table_schema` / `scripts/infer.mjs`) samples the first 100 CSV rows by default and only emits supported field types. It never guesses `required`/`unique`/primary keys, never modifies source data, and refuses to overwrite an existing descriptor. Leading-zero identifiers, incompatible mixed values and empty/all-missing samples fall back to string with hints; integer/decimal mixtures can infer number.
 - Batch JSON rows (`input_from_json` / `validate_json_table` / `TableSchema::validate_json`): a top-level array of arrays (schema field order) or objects (field-name order independent). JSON null and absent object properties are both Missing; extra object properties are `extra-property` errors; native numbers/booleans are accepted only for their matching field kinds and are never stringified into other kinds. Fully materialized; no streaming claim.
 
-The single-table RowValidator accepts decoded CSV records or individual JSON rows. Its field checks, exact uniqueness and primary-key checks use logical cell values. It rejects all foreign keys during construction. Diagnostic samples are bounded; exact key indexes grow with distinct keys. The file CLI and JSON array parser remain batch APIs.
+The single-table RowValidator accepts decoded CSV records or individual JSON rows. Its field checks, exact uniqueness and primary-key checks use logical cell values. It rejects all foreign keys during construction. Diagnostic samples are bounded; exact key indexes grow with distinct keys. The repository CLI streams a single UTF-8 CSV with validate-stream and a standalone schema. Quoted multiline records, escaped quotes, CRLF, and multibyte characters may span input chunks. Package validation and the JSON array parser remain batch APIs.
 
 ## Explicit policies / numeric limitations
 
@@ -31,7 +31,7 @@ The single-table RowValidator accepts decoded CSV records or individual JSON row
 
 Remote URLs, resource path arrays, inline data, remote schema references, custom profiles, compressed resources, non-UTF-8 encoding, dialect options other than delimiter and quoteChar, non-default field formats, other field types, pattern constraints, custom trueValues/falseValues, bareNumber, decimalChar and groupChar. Adding a feature requires reference and regression tests first.
 
-The host enforces realpath containment and refuses overwriting export destinations. This local CLI is not designed as a multi-user untrusted-upload service. BOM stripping is consistent for the CSV API and CLI. It loads resources in memory; each source resource is limited to 16 MiB. Export preserves data; it does not silently clean or repair it.
+The host enforces realpath containment and refuses overwriting export destinations. This local CLI is not designed as a multi-user untrusted-upload service. BOM stripping is consistent for the CSV API and CLI. The batch package CLI loads each resource in memory with a 16 MiB per-resource limit. Export preserves data; it does not silently clean or repair it.
 
 ## Independent validation
 

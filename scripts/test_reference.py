@@ -45,6 +45,15 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
         assert report['ok'] == expected and command.returncode == (0 if expected else 1)
         if not expected:
             assert [(e['code'], e['field'], e['row']) for e in report['errors']] == [('enum', 'title', 1)]
+        schema_file = enumerated / 'products.schema.json'
+        schema_file.write_text(json.dumps(descriptor['resources'][0]['schema']))
+        stream = subprocess.run(['node', str(ROOT / 'scripts/cli.mjs'), 'validate-stream',
+                                 str(schema_file), str(enumerated / 'products.csv')],
+                                capture_output=True, text=True)
+        stream_report = json.loads(stream.stdout)
+        assert stream.returncode == command.returncode and stream_report['ok'] == expected
+        assert [(e['code'], e['field'], e['row']) for e in stream_report['errors']] == [
+            (e['code'], e['field'], e['row']) for e in report['errors']]
     print('enum-allowed-and-disallowed-reference PASS')
 
     # Two different v1 resource dialects in one package, with mixed quoting.

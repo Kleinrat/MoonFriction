@@ -2,9 +2,15 @@
 package "Kleinrat/frictionless/src/api"
 
 // Values
+pub fn finish_csv_stream(CsvSession) -> String
+
 pub fn infer_json(String) -> String
 
 pub fn inspect_json(String) -> String
+
+pub fn open_csv_stream(String, String, String, String, Int32) -> CsvSession
+
+pub fn push_csv_chunk(CsvSession, String) -> Bool
 
 pub fn validate_json(String) -> String
 
@@ -13,6 +19,9 @@ pub fn validate_json_files(String, String) -> String
 // Errors
 
 // Types and methods
+pub struct CsvSession {
+  // private fields
+}
 
 // Type aliases
 

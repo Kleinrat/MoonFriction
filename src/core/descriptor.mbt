@@ -212,18 +212,15 @@ pub fn parse_descriptor(text : String) -> Result[Descriptor, Array[Diagnostic]] 
         ),
       )
     }
-    for key in ["dialect", "compression"] {
-      if prop(item, key) != Json::null() {
-        errors.push(
-          issue(
-            "unsupported",
-            name,
-            0,
-            "",
-            "Resource feature not yet supported: " + key,
-          ),
-        )
-      }
+    if parse_csv_dialect(prop(item, "dialect")) is Err(message) {
+      errors.push(issue("unsupported", name, 0, "dialect", message))
+    }
+    if prop(item, "compression") != Json::null() {
+      errors.push(
+        issue(
+          "unsupported", name, 0, "", "Resource feature not yet supported: compression",
+        ),
+      )
     }
     if prop(item, "encoding") != Json::null() &&
       prop(item, "encoding") != Json::string("utf-8") {

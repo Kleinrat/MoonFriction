@@ -255,7 +255,9 @@ fn parse_schema_value(
     let constraints = prop(entry, "constraints")
     reject_nulls(
       constraints,
-      ["required", "unique", "minimum", "maximum", "minLength", "maxLength"],
+      [
+        "required", "unique", "enum", "minimum", "maximum", "minLength", "maxLength",
+      ],
       resource,
       fname,
       errors,
@@ -268,7 +270,7 @@ fn parse_schema_value(
     if constraints is Object(values) {
       for key, _ in values {
         if ![
-            "required", "unique", "minimum", "maximum", "minLength", "maxLength",
+            "required", "unique", "enum", "minimum", "maximum", "minLength", "maxLength",
           ].contains(key) {
           errors.push(
             issue(
@@ -314,6 +316,13 @@ fn parse_schema_value(
       kind,
       required: flag(constraints, "required", resource, fname, errors),
       unique: flag(constraints, "unique", resource, fname, errors),
+      enum_values: parse_enum(
+        prop(constraints, "enum"),
+        kind,
+        resource,
+        fname,
+        errors,
+      ),
       minimum,
       maximum,
       min_length,

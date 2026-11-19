@@ -4,23 +4,76 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {inspect_json,validate_json,validate_json_files} from '../_build/js/release/build/src/api/api.js';
 const decode=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
-export async function loadBundle(descriptorPath){
-  const full=await realpath(descriptorPath),base=path.dirname(full);
-  const text=decode(await readFile(full));
-  const info=JSON.parse(inspect_json(text));
-  if(!info.ok) return {report:info};
-  const files=[];
-  for(const item of info.resources){
-    const file=await realpath(path.resolve(base,item.path));
-    const rel=path.relative(base,file);
-    if(rel==='..'||rel.startsWith('..'+path.sep)||path.isAbsolute(rel)) throw Error('Resource escapes package directory');
-    const s=await stat(file);
-    if(!s.isFile()||s.size>16*1024*1024) throw Error('Resource must be a regular file of at most 16 MiB');
-    files.push({...item,bytes:await readFile(file)});
+async function readPackageFile(base, relative) {
+  const file = await realpath(path.resolve(base, relative));
+  const rel = path.relative(base, file);
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+    throw Error('Resource escapes package directory: ' + relative);
   }
-  const descriptor=JSON.parse(text);
-  const report=JSON.parse(validate_json(JSON.stringify({descriptor,resources:files.map(x=>({name:x.name,csv:decode(x.bytes)}))})));
-  return {descriptor,files,report};
+  const info = await stat(file);
+  if (!info.isFile() || info.size > 16 * 1024 * 1024) {
+    throw Error('Resource must be a regular file of at most 16 MiB: ' + relative);
+  }
+  return readFile(file);
+}
+
+// Preserve number literals when expanding descriptors, including extension metadata.
+function parseDocument(text) {
+  return JSON.parse(text, (_key, value, context) =>
+    typeof value === 'number' ? JSON.rawJSON(context.source) : value);
+}
+
+async function loadDescriptor(descriptorPath) {
+  const full = await realpath(descriptorPath);
+  const base = path.dirname(full);
+  let text = decode(await readFile(full));
+  let descriptor;
+  try {
+    descriptor = parseDocument(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return {report: JSON.parse(inspect_json(text))};
+  }
+  const schemas = new Map();
+  for (const item of Array.isArray(descriptor?.resources) ? descriptor.resources : []) {
+    if (typeof item?.schema !== 'string') continue;
+    const ref = item.schema;
+    const invalid = message => ({report: {ok: false, errors: [{
+      code: 'descriptor', resource: typeof item.name === 'string' ? item.name : '',
+      row: 0, field: 'schema', message,
+    }]}});
+    if (/[\\:\x00]/.test(ref) || ref.split('/').some(part => ['', '.', '..'].includes(part))) {
+      return invalid('Expected a local relative schema path inside the package');
+    }
+    if (!schemas.has(ref)) {
+      const source = decode(await readPackageFile(base, ref));
+      try {
+        schemas.set(ref, parseDocument(source));
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        return invalid('Invalid schema JSON: ' + ref);
+      }
+    }
+    const schema = schemas.get(ref);
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema) || JSON.isRawJSON(schema)) {
+      return invalid('Expected a Table Schema object in ' + ref);
+    }
+    item.schema = schema;
+  }
+  if (schemas.size) text = JSON.stringify(descriptor);
+  return {base, text, report: JSON.parse(inspect_json(text))};
+}
+
+export async function loadBundle(descriptorPath) {
+  const {base, text, report: info} = await loadDescriptor(descriptorPath);
+  if (!info.ok) return {report: info};
+  const files = [];
+  for (const item of info.resources) {
+    files.push({...item, bytes: await readPackageFile(base, item.path)});
+  }
+  const resources = files.map(f => ({name: f.name, csv: decode(f.bytes)}));
+  const request = '{"descriptor":' + text + ',"resources":' + JSON.stringify(resources) + '}';
+  return {descriptor: JSON.parse(text), descriptorText: text, files, report: JSON.parse(validate_json(request))};
 }
 export async function exportBundle(bundle,destination){
   if(!bundle.report.ok) throw Error('Refusing to export an invalid package');
@@ -31,14 +84,15 @@ export async function exportBundle(bundle,destination){
   const stage=await mkdtemp(path.join(parent,'.moonfriction-'));
   try{
     for(const f of bundle.files){const target=path.join(stage,f.path);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,f.bytes);}
-    await writeFile(path.join(stage,'datapackage.json'),JSON.stringify(bundle.descriptor,null,2)+'\n',{flag:'wx'});
+    await writeFile(path.join(stage,'datapackage.json'),(bundle.descriptorText ?? JSON.stringify(bundle.descriptor,null,2))+'\n',{flag:'wx'});
     // Recheck for ordinary accidental overwrite before rename.
     try {await stat(dest);throw Error('Destination already exists');}catch(e){if(e.code!=='ENOENT')throw e;}
     await rename(stage,dest);
   }catch(e){await rm(stage,{recursive:true,force:true});throw e;}
 }
-async function checkJsonFiles(descriptorPath, mappings) {
-  const descriptor = decode(await readFile(descriptorPath));
+export async function checkJsonFiles(descriptorPath, mappings) {
+  const {text: descriptor, report} = await loadDescriptor(descriptorPath);
+  if (!report.ok) return report;
   const batches = [];
   for (const mapping of mappings) {
     const separator = mapping.indexOf('=');
@@ -63,7 +117,7 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
     console.error('Usage: node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...');process.exitCode=2;
   }else{
     try{
-      const bundle=command==='validate-json'?{report:await checkJsonFiles(file,args)}:command==='inspect'?{report:JSON.parse(inspect_json(decode(await readFile(file))))}:await loadBundle(file);
+      const bundle=command==='validate-json'?{report:await checkJsonFiles(file,args)}:command==='inspect'?await loadDescriptor(file):await loadBundle(file);
       if(command==='export'&&bundle.report.ok) await exportBundle(bundle,destination);
       console.log(JSON.stringify(bundle.report,null,2));process.exitCode=bundle.report.ok?0:1;
     }catch(error){console.error(JSON.stringify({ok:false,error:error.message}));process.exitCode=2;}

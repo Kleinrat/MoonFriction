@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.3.0 包含 JSON 跨表校验、独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.3.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.3.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.4.0 支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.4.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.4.0)。支持范围是明确子集，不宣称完整标准兼容。
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -66,9 +66,29 @@ println(report.valid()) // false：主键重复
 
 可运行的全新消费者见 [`examples/standalone-consumer`](examples/standalone-consumer)；`scripts/test_embedding.py` 会把它作为独立项目编译。完整说明见[独立 Table Schema](docs/zh/standalone-schema.md)。
 
+## 限定状态等字段的取值
+
+例如，在字段定义中写入 `{"name":"status","type":"string","constraints":{"enum":["draft","paid"]}}`。订单状态为 `paid` 时通过，为 `void` 时报告 `enum` 及记录号和字段名。CSV 和 JSON 共用这项检查。支持字符串、整数、有限数值和布尔值；允许列表须非空，成员使用字段对应的 JSON 类型。缺失值仍由 `required` 决定。
+
+## 读取分号 CSV 和 Tab 分隔文件（仓库源码）
+
+在 `datapackage.json` 的资源对象中设置方言。例如，数据以分号分列、用单引号包住含分号的文本时，添加：
+
+```json
+"dialect": {"delimiter": ";", "quoteChar": "'"}
+```
+
+Tab 分隔用 `"delimiter": "\t"`。各资源可以分别配置；省略选项时使用逗号和双引号。校验和导出命令与普通 CSV 相同，导出保留原文件字节及方言声明。嵌入库时可调用 `input_from_csv(name, text, dialect={delimiter: ';', quote_char: '\''})`。无描述文件的草稿推断命令仍按默认 CSV 读取。
+
+## 多个数据包共用一份规则（仓库源码）
+
+把规则保存为 UTF-8 JSON 文件，例如 `schemas/products.json`，内容为 `{"fields":[{"name":"id","type":"integer"}],"primaryKey":"id"}`。在每个需要它的描述文件中，将对应资源的 `schema` 写成 `"schemas/products.json"`。路径相对于该描述文件所在目录，因此同目录的月报描述文件可以共用这份规则。
+
+命令行的 inspect、validate、validate-json、中文 explain 和 export 都支持这种写法。导出会将规则写入新描述文件，移动导出目录后仍能独立校验。引用仅限包目录内的本地文件，每份最多 16 MiB。纯 MoonBit 接口由调用者提供已内嵌的规则。
+
 ## JSON 批量行输入
 
-0.3.0 新增 `validate_json_package`，可把多张内存 JSON 表一起检查，例如定位订单引用的商品编号。可用命令行直接检查两份 JSON 文件，见[可复制的命令和错误示例](docs/zh/json-input.md#用命令行检查商品和订单)。库调用见[订单与商品示例](examples/json-consumer/main.mbt)。
+0.3.0 新增 `validate_json_package`，可把多张内存 JSON 表一起检查，例如定位订单引用的商品编号。可用命令行直接检查两份 JSON 文件，见[可复制的命令和错误示例](docs/zh/json-input.md#用命令行检查商品和订单)。中文解释可用 `node scripts/explain.mjs --json 描述文件 资源名=文件 ...`。库调用见[订单与商品示例](examples/json-consumer/main.mbt)。
 
 `input_from_json` 接收顶层 JSON 数组，元素既可以按字段顺序的数组，也可以是按字段名取值的对象；对象键顺序不影响字段顺序。原生 JSON 数字/布尔不再转字符串：
 
@@ -94,7 +114,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.3.0
+moon add Kleinrat/frictionless@0.4.0
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -161,7 +181,7 @@ python3 -m venv .venv-reference
 
 ## 兼容性与边界
 
-详见 [支持范围](docs/COMPATIBILITY.md)。首版不支持远程资源、外部 schema、压缩包、自定义 CSV 方言、日期类型、正则和 enum 约束等；遇到这些要求会报错，不假称已完成校验。
+详见 [支持范围](docs/COMPATIBILITY.md)。当前不支持远程资源、远程 schema、压缩包、上述范围以外的 CSV 方言选项、日期类型、正则约束等；遇到这些要求会报错，不假称已完成校验。
 
 缺失值按物理字符串精确匹配后再转换。省略 missingValues 时采用 `[""]`；显式空数组保留空字符串。空 CSV 记录不被跳过，BOM 在 CLI 与库接口中一致处理。记录号是逻辑数据记录号，不是包含表头的物理文件行号。
 

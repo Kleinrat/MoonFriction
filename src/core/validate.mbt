@@ -41,6 +41,18 @@ fn check_field_definitions(
       )
     }
     names.push(f.name)
+    if f.enum_values is Some(values) &&
+      (values.is_empty() || !values.all(v => enum_member_matches(v, f.kind))) {
+      errors.push(
+        issue(
+          "schema",
+          name,
+          0,
+          f.name,
+          "enum requires a nonempty array of values matching the field type",
+        ),
+      )
+    }
     if (f.minimum is Some(n) && !n.is_finite()) ||
       (f.maximum is Some(n) && !n.is_finite()) {
       errors.push(
@@ -95,6 +107,11 @@ fn check_logical_cell(
       )
     }
   } else {
+    if f.enum_values is Some(values) && !values.contains(cell) {
+      errors.push(
+        issue("enum", name, number, f.name, "Value is outside the allowed set"),
+      )
+    }
     if f.unique && output.any(prior => prior[column] == cell) {
       errors.push(
         issue("unique", name, number, f.name, "Duplicate logical value"),

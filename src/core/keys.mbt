@@ -141,7 +141,7 @@ pub fn validate_foreign_key(
           "foreign-key",
           table.name,
           i + 1,
-          "",
+          fields.join(", "),
           "No matching referenced row",
         ),
       )

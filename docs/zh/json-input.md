@@ -48,3 +48,11 @@ node scripts/cli.mjs validate-json examples/shop/datapackage.json products=examp
 ```
 
 示例会返回 `ok: true`，两张表各有一行。复制订单文件，把其中的 `product_id` 改为 `42`，再将命令中的订单路径指向副本，就能看到 `orders` 第一行的 `foreign-key` 错误。该命令只读取显式指定的文件。退出码 0 表示通过，1 表示数据或描述文件无效，2 表示参数或文件读取错误。每张表限 16 MiB。
+
+### 用中文查看错误（仓库源码）
+
+```sh
+node scripts/explain.mjs --json examples/shop/datapackage.json products=examples/shop/products.json orders=examples/shop/orders.json
+```
+
+把订单的商品编号改为一个不存在的值后，输出会标出资源 orders、数据记录 1 和字段 product_id，并提示核对商品编号。JSON 的记录号从数组第一条起算。自动化脚本仍可使用 validate-json 读取结构化诊断；两个入口的退出码相同。

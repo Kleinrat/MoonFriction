@@ -36,12 +36,13 @@ node scripts/explain.mjs "$MOONFRICTION_DEMO/exported/datapackage.json"
 |---|---|---|
 | csv | CSV 格式无法读取 | 检查引号是否成对、引号内的转义和分隔符。 |
 | descriptor | 数据包规则文件不合法 | 检查 datapackage.json 的属性、字段和资源声明。 |
+| enum | 取值不在允许范围内 | 对照该字段 constraints.enum 中列出的值，检查拼写、大小写和类型。 |
 | extra-property | JSON 行出现未声明属性 | 删除多余属性，或先在 Table Schema 中声明该字段。 |
 | foreign-key | 引用的记录不存在 | 对照目标表修正编号，或补充确实存在的目标记录。 |
 | foreign-key-schema | 外键规则不合法 | 核对源字段、目标资源、目标字段及字段类型。 |
 | foreign-key-scope | 跨表外键需要完整数据包 | 在数据包中使用 validate_package 校验；单表接口不会假装已解析其他资源。 |
 | header | 表头与规则不一致 | 按规则的字段名称和顺序修正 CSV 第一条记录。 |
-| input | 调用输入不合法 | 提供 descriptor 和每个资源对应的 CSV 字符串。 |
+| input | 调用输入不合法 | 核对资源名和输入格式。JSON 文件应为数组，行应全部为对象或全部为数组。 |
 | invalid-table | 传入的逻辑表结构不合法 | 先校验原始记录，再使用有效报告中的逻辑表。 |
 | json | JSON 文本无法解析 | 检查逗号、引号、括号和 JSON 语法。 |
 | json-rows | JSON 行结构不符合批量输入约定 | 顶层传数组；元素统一为对象或统一为数组，不要混用。 |

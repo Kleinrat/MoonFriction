@@ -70,3 +70,41 @@ test "package and standalone parsers share schema semantics" {
     validate_table_schema("t", schema, ["id", "title"], [["1", "NA"]]).valid(),
   )
 }
+
+///|
+test "enum compares typed values across CSV and JSON preserving Int64" {
+  let schema = parse_table_schema(
+    (
+      #|{"fields":[{"name":"status","constraints":{"enum":["draft","paid"]}},{"name":"id","type":"integer","constraints":{"enum":[9007199254740993]}},{"name":"amount","type":"number","constraints":{"enum":[1.5]}},{"name":"active","type":"boolean","constraints":{"enum":[true]}}]}
+    ),
+  ).unwrap()
+  let csv = schema.validate("orders", ["status", "id", "amount", "active"], [
+    ["paid", "9007199254740993", "1.50", "1"],
+    ["void", "9007199254740992", "2", "false"],
+    ["", "", "", ""],
+  ])
+  let json = schema.validate_json(
+    "orders",
+    input_from_json(
+      "orders",
+      (
+        #|[["paid",9007199254740993,1.5,true],["void",9007199254740992,2,false],[null,null,null,null]]
+      ),
+    ).unwrap(),
+  )
+  assert_eq(csv.errors, json.errors)
+  assert_eq(csv.errors.map(e => e.field), ["status", "id", "amount", "active"])
+  assert_true(csv.errors.all(e => e.code == "enum" && e.row == 2))
+}
+
+///|
+test "enumerations reject malformed schema definitions" {
+  for bad in ["null", "[]", "1", "[null]", "[true]", "[1.5]", "[\"1\"]"] {
+    let text = "{\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"constraints\":{\"enum\":" +
+      bad +
+      "}}]}"
+    assert_true(parse_table_schema(text) is Err(_))
+  }
+  let f = { ..field("flag", Boolean), enum_values: Some([TextValue("true")]), }
+  assert_false(validate_table("t", [f], ["flag"], []).valid())
+}

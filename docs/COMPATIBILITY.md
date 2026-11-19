@@ -4,10 +4,11 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 
 ## Supported
 
-- Inline schemas for named local UTF-8 CSV resources, with default comma/double-quote dialect. Blank lines are preserved as empty records; data whitespace is not trimmed.
+- Inline schemas for named local UTF-8 CSV resources, with per-resource CSV dialect settings (default comma/double quote). Blank lines are preserved as empty records; data whitespace is not trimmed.
+- CSV dialect delimiters: comma, semicolon or tab. Quote characters: double or single quote. Doubled quote characters escape a quote inside a quoted field. An omitted dialect or empty object uses the defaults. Unsupported values and keys are rejected.
 - Standalone Table Schema descriptors (`parse_table_schema` / `validate_table_schema`) using the same field, constraint, missing-value and primary-key semantics as inline resource schemas. Cross-table foreign keys are structurally accepted but single-table validation reports `foreign-key-scope` rather than resolving them.
 - string (default type), integer (signed 64-bit), number (finite binary64), boolean with default exact physical representations.
-- required, unique, minimum, maximum, minLength, maxLength; inapplicable constraints are descriptor errors.
+- enum (nonempty list of typed logical values), required, unique, minimum, maximum, minLength, maxLength; inapplicable constraints are descriptor errors.
 - Explicit missingValues arrays, including an empty array; omitted missingValues means [""]. Markers match before type conversion. Explicit null descriptor properties are not treated as omission.
 - Single and composite primary keys; named-resource and self-reference foreign keys. Typed comparisons happen after casting.
 - Original descriptor metadata and original CSV bytes retained on export.
@@ -26,7 +27,7 @@ This is a developing Data Package v1 / Table Schema v1 subset. It is not a full 
 
 ## Rejected for now
 
-Remote URLs, resource path arrays, inline data, external schema references, custom profiles, compressed resources, non-UTF-8 encoding, custom dialect objects, non-default field formats, other field types, enum and pattern constraints, custom trueValues/falseValues, bareNumber, decimalChar and groupChar. Adding a feature requires reference and regression tests first.
+Remote URLs, resource path arrays, inline data, remote schema references, custom profiles, compressed resources, non-UTF-8 encoding, dialect options other than delimiter and quoteChar, non-default field formats, other field types, pattern constraints, custom trueValues/falseValues, bareNumber, decimalChar and groupChar. Adding a feature requires reference and regression tests first.
 
 The host enforces realpath containment and refuses overwriting export destinations. This local CLI is not designed as a multi-user untrusted-upload service. BOM stripping is consistent for the CSV API and CLI. It loads resources in memory; each source resource is limited to 16 MiB. Export preserves data; it does not silently clean or repair it.
 
@@ -41,3 +42,5 @@ scripts/test_reference.py compares selected supported positive/negative cases wi
 - Tabular Data Resource: https://specs.frictionlessdata.io/tabular-data-resource/
 
 The independent DeepSeek review found prose/JSON-Schema discrepancies. See reviews/deepseek-spec-review.txt; review suggestions are evidence to inspect, not automatically accepted normative requirements.
+
+The repository CLI resolves relative local schema files inside the descriptor directory, including its subdirectories. Export embeds the resolved schemas. The pure core accepts inline schemas only.

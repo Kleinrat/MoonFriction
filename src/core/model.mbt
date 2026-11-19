@@ -23,6 +23,7 @@ pub(all) struct Field {
   name : String
   kind : FieldType
   required : Bool
+  enum_values : Array[Cell]?
   unique : Bool
   minimum : Double?
   maximum : Double?
@@ -36,6 +37,7 @@ pub fn field(name : String, kind : FieldType) -> Field {
     name,
     kind,
     required: false,
+    enum_values: None,
     unique: false,
     minimum: None,
     maximum: None,

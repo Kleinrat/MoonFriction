@@ -50,7 +50,12 @@ pub fn validate_json(text : String) -> String {
   }
   let tables : Array[@core.InputTable] = []
   for r in input.resources {
-    match @core.input_from_csv(r.name, r.csv) {
+    let parsed = match d.csv_dialect(r.name) {
+      Ok(dialect) => @core.input_from_csv(r.name, r.csv, dialect~)
+      // Package validation reports unexpected input names.
+      Err(_) => @core.input_from_csv(r.name, r.csv)
+    }
+    match parsed {
       Ok(t) => tables.push(t)
       Err(message) =>
         return (

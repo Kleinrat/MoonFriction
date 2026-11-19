@@ -42,10 +42,10 @@ test "unsupported features never silently pass" {
     (before, after) in [
       ("\"integer\"", "\"date\""),
       ("\"schema\":{", "\"encoding\":\"latin1\",\"schema\":{"),
-      ("\"schema\":{", "\"dialect\":{},\"schema\":{"),
+      ("\"schema\":{", "\"dialect\":{\"escapeChar\":true},\"schema\":{"),
       ("\"schema\":{", "\"profile\":\"custom\",\"schema\":{"),
       (
-        "\"type\":\"integer\"", "\"type\":\"integer\",\"constraints\":{\"enum\":[1]}",
+        "\"type\":\"integer\"", "\"type\":\"integer\",\"constraints\":{\"pattern\":\"x\"}",
       ),
     ] {
     let bad = good.replaced(before, after)
@@ -172,4 +172,23 @@ test "an unrelated table error does not hide an otherwise checkable foreign key 
   ])
   assert_true(report.errors.any(e => e.code == "required"))
   assert_true(report.errors.any(e => e.code == "foreign-key"))
+}
+
+///|
+test "invalid dialects are rejected at both public entry points" {
+  for
+    bad in [
+      "null", "1", "{\"quoteChar\":null}", "{\"delimiter\":\";;\"}", "{\"quoteChar\":\";\"}",
+      "{\"delimiter\":\"|\"}", "{\"skipRows\":1}",
+    ] {
+    let text = fixture_descriptor().replaced(
+      "\"schema\":",
+      "\"dialect\":" + bad + ",\"schema\":",
+    )
+    assert_true(parse_descriptor(text) is Err(_))
+  }
+  assert_true(
+    input_from_csv("t", "id", dialect={ delimiter: '|', quote_char: '"', })
+    is Err(_),
+  )
 }

@@ -6,9 +6,9 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.2.1 包含独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.2.1](https://mooncakes.io/docs/Kleinrat/frictionless@0.2.1)。支持范围是明确子集，不宣称完整标准兼容。
+0.3.0 包含 JSON 跨表校验、独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.3.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.3.0)。支持范围是明确子集，不宣称完整标准兼容。
 
-[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.2.1.md)
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
 ## 能做什么
 
@@ -68,6 +68,8 @@ println(report.valid()) // false：主键重复
 
 ## JSON 批量行输入
 
+0.3.0 新增 `validate_json_package`，可把多张内存 JSON 表一起检查，例如定位订单引用的商品编号。可用命令行直接检查两份 JSON 文件，见[可复制的命令和错误示例](docs/zh/json-input.md#用命令行检查商品和订单)。库调用见[订单与商品示例](examples/json-consumer/main.mbt)。
+
 `input_from_json` 接收顶层 JSON 数组，元素既可以按字段顺序的数组，也可以是按字段名取值的对象；对象键顺序不影响字段顺序。原生 JSON 数字/布尔不再转字符串：
 
 ```moonbit
@@ -92,7 +94,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.2.1
+moon add Kleinrat/frictionless@0.3.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

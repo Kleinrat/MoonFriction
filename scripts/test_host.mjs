@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,readFile,rm,symlink,mkdir,copyFile} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {loadBundle,exportBundle} from './cli.mjs';
 const temp=await mkdtemp(path.join(os.tmpdir(),'moonfriction-test-'));
 try{
@@ -13,6 +13,30 @@ try{
  await writeFile(path.join(chinese,'package.json'),'{"type":"module"}');
  const fromChinese=JSON.parse(execFileSync(process.execPath,[path.join(chinese,'scripts/cli.mjs'),'validate',path.resolve('examples/shop/datapackage.json')],{encoding:'utf8'}));
  assert.equal(fromChinese.ok,true);
+ const checkJson = (...mappings) => spawnSync(process.execPath, [
+   'scripts/cli.mjs', 'validate-json', 'examples/shop/datapackage.json', ...mappings,
+ ], {encoding: 'utf8'});
+ const products = 'products=examples/shop/products.json';
+ const orders = 'orders=examples/shop/orders.json';
+ const validJson = checkJson(orders, products);
+ assert.equal(validJson.status, 0, validJson.stderr);
+ assert.deepEqual(JSON.parse(validJson.stdout).resources, [{name:'products',rows:1},{name:'orders',rows:1}]);
+ const orderFile = path.join(temp, '订单.json');
+ await writeFile(orderFile, '[{"id":101,"product_id":9007199254740992,"quantity":1}]');
+ const invalidJson = checkJson(products, 'orders=' + orderFile);
+ assert.equal(invalidJson.status, 1);
+ const linkError = JSON.parse(invalidJson.stdout).errors[0];
+ assert.equal(linkError.code, 'foreign-key');
+ assert.equal(linkError.resource, 'orders');
+ assert.equal(linkError.row, 1);
+ await writeFile(orderFile, '[');
+ const syntax = checkJson(products, 'orders=' + orderFile);
+ assert.equal(syntax.status, 1);
+ assert.equal(JSON.parse(syntax.stdout).errors[0].resource, 'orders');
+ assert.equal(checkJson(products).status, 1);
+ assert.equal(checkJson(products, orders, orders).status, 1);
+ assert.equal(checkJson('orders').status, 2);
+ assert.equal(checkJson('orders=' + path.join(temp, 'missing.json')).status, 2);
  const original=await loadBundle('examples/shop/datapackage.json');assert.equal(original.report.ok,true);
  const dest=path.join(temp,'exported');await exportBundle(original,dest);
  const copied=await loadBundle(path.join(dest,'datapackage.json'));assert.equal(copied.report.ok,true);assert.deepEqual(copied.descriptor,original.descriptor);

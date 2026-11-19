@@ -62,7 +62,11 @@ pub fn validate_json(text : String) -> String {
           } : Json).stringify()
     }
   }
-  let report = @core.validate_package(d, tables)
+  package_result(@core.validate_package(d, tables))
+}
+
+///|
+fn package_result(report : @core.PackageReport) -> String {
   (
     {
       "ok": report.valid(),
@@ -73,6 +77,47 @@ pub fn validate_json(text : String) -> String {
         }),
       ),
     } : Json).stringify()
+}
+
+///|
+#derive(@json.FromJson)
+priv struct JsonBatch {
+  name : String
+  text : String
+}
+
+///|
+pub fn validate_json_files(descriptor : String, batches : String) -> String {
+  let d = match @core.parse_descriptor(descriptor) {
+    Err(errors) =>
+      return ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+    Ok(d) => d
+  }
+  let files : Array[JsonBatch] = @json.from_json(@json.parse(batches)) catch {
+    _ =>
+      return (
+        {
+          "ok": false,
+          "errors": [
+            { "code": "input", "message": "Expected named JSON batches" },
+          ],
+        } : Json).stringify()
+  }
+  let tables = []
+  for file in files {
+    match @core.input_from_json(file.name, file.text) {
+      Ok(t) => tables.push(t)
+      Err(message) =>
+        return (
+          {
+            "ok": false,
+            "errors": [
+              { "code": "input", "resource": file.name, "message": message },
+            ],
+          } : Json).stringify()
+    }
+  }
+  package_result(@core.validate_json_package(d, tables))
 }
 
 ///|

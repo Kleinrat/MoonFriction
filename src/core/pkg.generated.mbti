@@ -27,6 +27,8 @@ pub fn safe_resource_path(String) -> Bool
 
 pub fn validate_foreign_key(Table, Array[String], Table, Array[String]) -> Array[Diagnostic]
 
+pub fn validate_json_package(Descriptor, Array[JsonInputTable]) -> PackageReport
+
 pub fn validate_json_table(String, Array[Field], JsonInputTable, missing_values? : Array[String]) -> TableReport
 
 pub fn validate_package(Descriptor, Array[InputTable]) -> PackageReport

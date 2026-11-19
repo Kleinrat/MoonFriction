@@ -191,3 +191,37 @@ test "JSON single-table validation reuses primary key and scope rules" {
   )
   assert_eq(scoped.errors[0].code, "foreign-key-scope")
 }
+
+///|
+test "JSON package joins named batches with the same diagnostics as CSV" {
+  let description =
+    #|{"resources":[{"name":"products","path":"products.csv","schema":{"fields":[{"name":"id","type":"integer"}],"primaryKey":"id"}},{"name":"orders","path":"orders.csv","schema":{"fields":[{"name":"product","type":"integer"}],"foreignKeys":[{"fields":"product","reference":{"resource":"products","fields":"id"}}]}}]}
+  let descriptor = parse_descriptor(description).unwrap()
+  let products = input_from_json("products", "[[1]]").unwrap()
+  let orders = input_from_json("orders", "[{\"product\":1}]").unwrap()
+  let valid = validate_json_package(descriptor, [orders, products])
+  assert_true(valid.valid())
+  assert_eq(valid.tables.map(t => t.name), ["products", "orders"])
+  let invalid = validate_json_package(descriptor, [
+    input_from_json("products", "[[1],[1]]").unwrap(),
+    input_from_json("orders", "[[2]]").unwrap(),
+  ])
+  let csv = validate_package(descriptor, [
+    input_from_csv("products", "id\n1\n1").unwrap(),
+    input_from_csv("orders", "product\n2").unwrap(),
+  ])
+  assert_eq(invalid.errors.length(), 2)
+  assert_eq(invalid.errors, csv.errors)
+  let bad_inputs = validate_json_package(descriptor, [
+    products,
+    products,
+    input_from_json("extra", "[]").unwrap(),
+  ])
+  for name in ["products", "orders", "extra"] {
+    assert_true(
+      bad_inputs.errors.any(e => {
+        e.code == "resource-input" && e.resource == name
+      }),
+    )
+  }
+}

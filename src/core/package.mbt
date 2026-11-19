@@ -24,6 +24,40 @@ pub fn validate_package(
   descriptor : Descriptor,
   inputs : Array[InputTable],
 ) -> PackageReport {
+  validate_inputs(descriptor, inputs, t => t.name, (resource, input) => {
+    validate_table(
+      resource.name,
+      resource.fields,
+      input.header,
+      input.rows,
+      missing_values=resource.missing_values,
+    )
+  })
+}
+
+///|
+/// Validate named, in-memory JSON tables using the descriptor's schemas and keys.
+pub fn validate_json_package(
+  descriptor : Descriptor,
+  inputs : Array[JsonInputTable],
+) -> PackageReport {
+  validate_inputs(descriptor, inputs, t => t.name, (resource, input) => {
+    validate_json_table(
+      resource.name,
+      resource.fields,
+      input,
+      missing_values=resource.missing_values,
+    )
+  })
+}
+
+///|
+fn[T] validate_inputs(
+  descriptor : Descriptor,
+  inputs : Array[T],
+  name_of : (T) -> String,
+  check_table : (Resource, T) -> TableReport,
+) -> PackageReport {
   let tables : Array[Table] = []
   let errors : Array[Diagnostic] = []
   if descriptor.resources.is_empty() {
@@ -57,12 +91,12 @@ pub fn validate_package(
     }
   }
   for input in inputs {
-    if !descriptor.resources.any(r => r.name == input.name) ||
-      inputs.filter(x => x.name == input.name).length() != 1 {
+    if !descriptor.resources.any(r => r.name == name_of(input)) ||
+      inputs.filter(x => name_of(x) == name_of(input)).length() != 1 {
       errors.push(
         issue(
           "resource-input",
-          input.name,
+          name_of(input),
           0,
           "",
           "Unexpected or duplicate resource input",
@@ -71,7 +105,7 @@ pub fn validate_package(
     }
   }
   for resource in descriptor.resources {
-    let matches = inputs.filter(t => t.name == resource.name)
+    let matches = inputs.filter(t => name_of(t) == resource.name)
     if matches.length() != 1 {
       errors.push(
         issue(
@@ -84,14 +118,7 @@ pub fn validate_package(
       )
       continue
     }
-    let input = matches[0]
-    let report = validate_table(
-      resource.name,
-      resource.fields,
-      input.header,
-      input.rows,
-      missing_values=resource.missing_values,
-    )
+    let report = check_table(resource, matches[0])
     for e in report.errors {
       errors.push(e)
     }

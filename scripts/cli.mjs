@@ -2,7 +2,7 @@
 import {readFile,realpath,stat,mkdtemp,mkdir,writeFile,rename,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {inspect_json,validate_json} from '../_build/js/release/build/src/api/api.js';
+import {inspect_json,validate_json,validate_json_files} from '../_build/js/release/build/src/api/api.js';
 const decode=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
 export async function loadBundle(descriptorPath){
   const full=await realpath(descriptorPath),base=path.dirname(full);
@@ -37,13 +37,33 @@ export async function exportBundle(bundle,destination){
     await rename(stage,dest);
   }catch(e){await rm(stage,{recursive:true,force:true});throw e;}
 }
+async function checkJsonFiles(descriptorPath, mappings) {
+  const descriptor = decode(await readFile(descriptorPath));
+  const batches = [];
+  for (const mapping of mappings) {
+    const separator = mapping.indexOf('=');
+    if (separator < 1 || separator === mapping.length - 1) {
+      throw Error('Expected RESOURCE=FILE.json');
+    }
+    const name = mapping.slice(0, separator);
+    const file = mapping.slice(separator + 1);
+    const info = await stat(file);
+    if (!info.isFile() || info.size > 16 * 1024 * 1024) {
+      throw Error('Resource must be a regular file of at most 16 MiB: ' + file);
+    }
+    // Pass the original text so JavaScript never rounds Int64 identifiers.
+    batches.push({name, text: decode(await readFile(file))});
+  }
+  return JSON.parse(validate_json_files(descriptor, JSON.stringify(batches)));
+}
 if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLToPath(import.meta.url)){
-  const [command,file,destination]=process.argv.slice(2);
-  if(!['inspect','validate','export'].includes(command)||!file||(command==='export'&&!destination)){
-    console.error('Usage: node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION');process.exitCode=2;
+  const [command,file,...args]=process.argv.slice(2);
+  const [destination] = args;
+  if(!['inspect','validate','export','validate-json'].includes(command)||!file||((command==='export'||command==='validate-json')&&!destination)){
+    console.error('Usage: node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...');process.exitCode=2;
   }else{
     try{
-      const bundle=command==='inspect'?{report:JSON.parse(inspect_json(decode(await readFile(file))))}:await loadBundle(file);
+      const bundle=command==='validate-json'?{report:await checkJsonFiles(file,args)}:command==='inspect'?{report:JSON.parse(inspect_json(decode(await readFile(file))))}:await loadBundle(file);
       if(command==='export'&&bundle.report.ok) await exportBundle(bundle,destination);
       console.log(JSON.stringify(bundle.report,null,2));process.exitCode=bundle.report.ok?0:1;
     }catch(error){console.error(JSON.stringify({ok:false,error:error.message}));process.exitCode=2;}

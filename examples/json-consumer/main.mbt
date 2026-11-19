@@ -29,4 +29,10 @@ fn main {
     }
   }
   println("Extra property code: \{extra.errors[0].code}")
+  let description = #|{"resources":[{"name":"products","path":"products.csv","schema":{"fields":[{"name":"id","type":"integer"}],"primaryKey":"id"}},{"name":"orders","path":"orders.csv","schema":{"fields":[{"name":"product","type":"integer"}],"foreignKeys":[{"fields":"product","reference":{"resource":"products","fields":"id"}}]}}]}
+  let descriptor = @core.parse_descriptor(description).unwrap()
+  let products = @core.input_from_json("products", "[[1]]").unwrap()
+  let orders = @core.input_from_json("orders", "[[42]]").unwrap()
+  let package_report = @core.validate_json_package(descriptor, [products, orders])
+  println("Missing product: \{package_report.errors[0].code}")
 }

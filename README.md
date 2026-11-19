@@ -6,9 +6,9 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.2.0 包含独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.2.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.2.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.2.1 包含独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.2.1](https://mooncakes.io/docs/Kleinrat/frictionless@0.2.1)。支持范围是明确子集，不宣称完整标准兼容。
 
-[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.2.0.md)
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.2.1.md)
 
 ## 能做什么
 
@@ -92,7 +92,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.2.0
+moon add Kleinrat/frictionless@0.2.1
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -155,7 +155,7 @@ python3 -m venv .venv-reference
 .venv-reference/bin/python scripts/test_reference.py
 ```
 
-当前50项 MoonBit 测试通过；中文说明覆盖26种诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；三个独立 MoonBit 消费者项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包和自动推断草稿能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
+当前51项 MoonBit 测试通过；中文说明覆盖26种诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；三个独立 MoonBit 消费者项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包和自动推断草稿能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
 
 ## 兼容性与边界
 

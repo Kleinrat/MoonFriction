@@ -46,3 +46,26 @@ test "inference reports sampling range and skips malformed sample rows" {
     inferred2.hints.any(h => h.message.contains("列数与表头不一致")),
   )
 }
+
+///|
+test "0/1 hint requires every nonmissing integer sample to be binary" {
+  for
+    rows in [
+      [["1"], ["2"]],
+      [["0"], ["1"], ["2"]],
+      [["0"], ["-1"]],
+      [["2"], ["1"], [""]],
+    ] {
+    let result = infer_table_schema(["quantity"], rows)
+    assert_eq(result.schema.fields[0].kind, Integer)
+    assert_false(result.hints.any(h => h.message.contains("只有 0/1")))
+  }
+  for rows in [[["0"], ["1"]], [["1"]], [["0"], [""]]] {
+    let result = infer_table_schema(["flag"], rows)
+    assert_eq(result.schema.fields[0].kind, Integer)
+    assert_true(result.hints.any(h => h.message.contains("只有 0/1")))
+  }
+  let empty = infer_table_schema(["flag"], [[""]])
+  assert_eq(empty.schema.fields[0].kind, Text)
+  assert_false(empty.hints.any(h => h.message.contains("只有 0/1")))
+}

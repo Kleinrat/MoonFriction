@@ -134,11 +134,14 @@ pub fn infer_table_schema(
     let mut saw_text = false
     let mut saw_leading_zero = false
     let mut saw_one_zero = false
+    let mut saw_other_integer = false
     for text in values {
       if canonical_integer(text) {
         saw_integer = true
         if one_or_zero(text) {
           saw_one_zero = true
+        } else {
+          saw_other_integer = true
         }
       } else if leading_zero_integer(text) {
         saw_leading_zero = true
@@ -173,7 +176,7 @@ pub fn infer_table_schema(
     } else if saw_number {
       Number
     } else if saw_integer {
-      if saw_one_zero {
+      if saw_one_zero && !saw_other_integer {
         hints.push(
           infer_hint(
             name, "样本只有 0/1，暂按 integer 推断；若表示布尔请手工修改",

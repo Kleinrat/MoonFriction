@@ -6,9 +6,9 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-Mooncakes 当前发布版是 [Kleinrat/frictionless@0.1.2](https://mooncakes.io/docs/Kleinrat/frictionless@0.1.2)。本仓库 `main` 还包含尚未发布的独立 Table Schema、JSON 行输入和草稿推断 API；发布前请以仓库源码或 workspace 依赖使用。支持范围是明确子集，不宣称完整标准兼容。
+0.2.0 包含独立 Table Schema、JSON 行输入和 CSV 规则草稿推断 API。安装入口：[Kleinrat/frictionless@0.2.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.2.0)。支持范围是明确子集，不宣称完整标准兼容。
 
-[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.1.2.md)
+[持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [发布验证](docs/RELEASE-0.2.0.md)
 
 ## 能做什么
 
@@ -88,7 +88,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.1.2
+moon add Kleinrat/frictionless@0.2.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

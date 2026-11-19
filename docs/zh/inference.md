@@ -12,9 +12,9 @@ node scripts/infer.mjs "$tmp/products.csv" --out "$tmp/datapackage.json"
 
 ## 推断策略
 
-- 默认只采样前 100 条；超过时提示“仅采样前 N 条”，不会假装检查了全部数据。
+- 默认采样前100条，可通过 `--sample N` 调整。命令仍读取并解析整个文件，采样不是流式读取；超过时提示“仅采样前 N 条”，不会假装检查了全部数据。
 - 只推断当前支持的 `string`、`integer`、`number`、`boolean`。
-- 空样本回退 `string`；列内类型混合回退 `string`，并给出原因。
+- 空样本或全缺失列回退 `string`；文本与数字、布尔与数字等不兼容混合回退 `string`；整数与小数混合可推断为 `number`。
 - 前导零编号（如 `001`）按文本保留，避免把编号变成数字。
 - 只有 `true/false` 这类默认布尔词推断为 boolean；仅含 `0/1` 时按 integer 推断并提示歧义。
 - 不猜测 `required`、`unique` 或主键；这些需要人工编辑。

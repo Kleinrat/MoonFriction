@@ -1,0 +1,72 @@
+{
+  "name": "asset-loans",
+  "resources": [
+    {
+      "name": "assets",
+      "path": "assets.csv",
+      "schema": {
+        "fields": [
+          {
+            "name": "asset_id",
+            "type": "string",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "stock",
+            "type": "integer",
+            "constraints": {
+              "minimum": 0
+            }
+          }
+        ],
+        "primaryKey": "asset_id"
+      }
+    },
+    {
+      "name": "loans",
+      "path": "loans.csv",
+      "schema": {
+        "fields": [
+          {
+            "name": "loan_id",
+            "type": "integer"
+          },
+          {
+            "name": "asset_id",
+            "type": "string",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "quantity",
+            "type": "integer",
+            "constraints": {
+              "required": true,
+              "minimum": 1
+            }
+          }
+        ],
+        "primaryKey": "loan_id",
+        "foreignKeys": [
+          {
+            "fields": "asset_id",
+            "reference": {
+              "resource": "assets",
+              "fields": "asset_id"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

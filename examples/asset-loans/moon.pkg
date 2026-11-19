@@ -1,0 +1,13 @@
+import {
+  "Kleinrat/frictionless/src/core",
+  "moonbitlang/core/json",
+}
+
+options(
+  link: {
+    "js": {
+      "exports": [ "check_bundle", "draft_bundle", "check_request" ],
+      "format": "esm",
+    },
+  },
+)

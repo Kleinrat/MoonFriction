@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "example/asset-loans"
+
+// Values
+pub fn check_bundle(String) -> String
+
+pub fn check_request(String) -> String
+
+pub fn draft_bundle(String) -> String
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

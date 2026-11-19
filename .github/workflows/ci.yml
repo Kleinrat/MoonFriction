@@ -39,3 +39,4 @@ jobs:
         run: |
           python -m pip install -r scripts/requirements-reference.txt
           python scripts/test_reference.py
+          python scripts/test_asset_consumer.py --reference

@@ -23,6 +23,10 @@
 
 三个合成示例：商品与订单、学生与成绩、传感器与读数。它们用于验证数据交换能力，不代表真实用户采用。
 
+## 独立业务接入示例
+
+[物资借用检查工具](examples/asset-loans/README.md)是独立 MoonBit 模块，从 Mooncakes 安装0.2.0，不导入本仓库源码。覆盖规则草稿、人工确认、关联数据检查、JSON申请字段检查和导出；属于合成业务演示，尚无真实试用反馈。
+
 ## 运行
 
 需要 MoonBit、Node.js 22+。当前验证：`moonc 0.10.20`。CI 检查编译器不低于赛事要求的 0.10.16；并不表示所有旧工具链均已测试。
@@ -80,7 +84,7 @@ let report = @core.validate_json_table("books", fields, input)
 node scripts/infer.mjs examples/shop/products.csv
 ```
 
-草稿只包含可推断的字段类型，不会猜主键或 `required`，也不会修改原 CSV；目标描述文件已存在时拒绝覆盖。采样范围、前导零、混合类型和空样本都会给出提示。生成后请人工编辑，再 `validate` 和 `export`。详见[从 CSV 生成草稿](docs/zh/inference.md)。
+草稿只包含可推断的字段类型，不会猜主键或 `required`，也不会修改原 CSV；目标描述文件已存在时拒绝覆盖。默认采样前100条，可用 `--sample N` 调整；整个文件仍会读入并解析。前导零编号和不兼容混合类型回退文本，整数与小数混合可推断为 number。生成后请人工编辑，再 `validate` 和 `export`。详见[从 CSV 生成草稿](docs/zh/inference.md)。
 
 ## 作为 MoonBit 库使用
 

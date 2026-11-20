@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.8.0 — 2026-11-20
+
+- 字段类型变更时保留原有类型记录，并附一条 `fieldConstraints` 记录，展示新旧必填、唯一、枚举、数值和长度约束。
+- 复合主键仅变更字段顺序时使用 `primaryKeyOrder / orderOnly`。依赖差异报告的调用者请识别这一新增分类；主键成员变化仍需复核。
+
 ## 0.7.0 — 2026-11-20
 
 - 新增 MoonBit API `diff_table_schemas` 和 CLI `schema diff OLD.json NEW.json`，报告字段规则的收紧、放宽和需要人工复核的结构变化。

@@ -24,6 +24,24 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
         assert resource.validate().valid == expected, ('schema diff witness', version)
     print('schema-diff-order-reference PASS')
 
+    # Swapping composite key positions preserves which rows violate uniqueness.
+    for key in (['a', 'b'], ['b', 'a']):
+        descriptor = {'fields': [{'name': name, 'type': 'string'} for name in ('a', 'b')],
+                      'primaryKey': key}
+        schema = frictionless.Schema.from_descriptor(descriptor)
+        path = work / 'key.schema.json'
+        path.write_text(json.dumps(descriptor))
+        data_path = work / 'pairs.csv'
+        for suffix, valid in [('', True), ('x,y\n', False)]:
+            data_path.write_text('a,b\nx,y\ny,x\n' + suffix)
+            reference = frictionless.Resource(path=data_path.name, basepath=str(work), schema=schema)
+            assert reference.validate().valid == valid
+            actual = subprocess.run(['node', 'scripts/cli.mjs', 'validate-stream', str(path), str(data_path)],
+                                    cwd=ROOT, capture_output=True, text=True)
+            assert actual.returncode == int(not valid)
+            assert [e['row'] for e in json.loads(actual.stdout)['errors']] == ([] if valid else [3])
+    print('composite-key order: both validators agree for distinct and duplicate tuples')
+
     tz = ROOT / 'examples/iana-tzdb'
     data = tz / 'zones.csv'
     assert hashlib.sha256(data.read_bytes()).hexdigest() == '245e82d730c1fff286117da6e34241ca70704b57113385d2f282a9c4a631195a'

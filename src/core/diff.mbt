@@ -134,6 +134,19 @@ fn kind_label(kind : FieldType) -> String {
 }
 
 ///|
+fn field_constraints(f : Field) -> Json {
+  {
+    "required": @json.to_json(f.required),
+    "unique": @json.to_json(f.unique),
+    "enum": enum_json(f.enum_values),
+    "minimum": diff_bound_value(f.minimum, f.kind == Integer),
+    "maximum": diff_bound_value(f.maximum, f.kind == Integer),
+    "minLength": diff_bound_value(f.min_length.map(n => n.to_double()), false),
+    "maxLength": diff_bound_value(f.max_length.map(n => n.to_double()), false),
+  }
+}
+
+///|
 fn fk_json(key : ForeignKey) -> Json {
   {
     "fields": @json.to_json(key.fields),
@@ -176,6 +189,12 @@ pub fn diff_table_schemas(
         "type",
         Json::string(kind_label(a.kind)),
         Json::string(kind_label(b.kind)),
+      )
+      review(
+        a.name,
+        "fieldConstraints",
+        field_constraints(a),
+        field_constraints(b),
       )
       continue
     }
@@ -241,12 +260,24 @@ pub fn diff_table_schemas(
     review("", "fieldOrder", @json.to_json(old_names), @json.to_json(names))
   }
   if old.primary_key != current.primary_key {
-    review(
-      "",
-      "primaryKey",
-      @json.to_json(old.primary_key),
-      @json.to_json(current.primary_key),
-    )
+    let old_members = old.primary_key.copy()
+    let new_members = current.primary_key.copy()
+    old_members.sort()
+    new_members.sort()
+    let before = @json.to_json(old.primary_key)
+    let after = @json.to_json(current.primary_key)
+    if old_members == new_members {
+      out.push({
+        field: "",
+        rule: "primaryKeyOrder",
+        impact: "orderOnly",
+        before,
+        after,
+        members: None,
+      })
+    } else {
+      review("", "primaryKey", before, after)
+    }
   }
   if !old.missing_values.all(n => current.missing_values.contains(n)) ||
     !current.missing_values.all(n => old.missing_values.contains(n)) {

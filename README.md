@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.7.0 新增 Table Schema 规则比较，支持大 CSV 文件流式校验，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.7.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.7.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.8.0 改进 Table Schema 规则比较的结构变化提示，支持大 CSV 文件流式校验，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.8.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.8.0)。支持范围是明确子集，不宣称完整标准兼容。
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -81,7 +81,7 @@ node scripts/cli.mjs validate-stream examples/schema-diff/new.json examples/sche
 
 比较命令返回字段、规则、旧值、新值及影响。此例返回 `status / enum / tightened`，移除成员为 draft。随后两条校验命令分别通过和报告第 1 条订单的枚举错误。交换规则顺序会得到 relaxed。
 
-MoonBit 接口为 `diff_table_schemas(old, current)`，输入由 `parse_table_schema` 解析。按字段名比较 required、unique、enum、数值及长度上下限；枚举同时增删时分别报告两个方向及对应成员。字段增删、顺序或类型改变、主外键及缺失标记变化标记为 review。类型变更的字段整体交由人工复核；不会猜测改名。结果仅说明各条规则的潜在影响，元数据不参加比较。integer 的 minimum/maximum 任一侧超出 ±9007199254740991 时返回 review，对该侧输出 `{"precision":"outside-safe-integer-range"}`。此时请核对原始规则中的数字；即使两个输入相同也可能需要复核。比较成功（含发现差异）退出 0，规则无效退出 1，参数或文件错误退出 2。
+MoonBit 接口为 `diff_table_schemas(old, current)`，输入由 `parse_table_schema` 解析。按字段名比较 required、unique、enum、数值及长度上下限；枚举同时增删时分别报告两个方向及对应成员。字段增删、顺序或类型改变、主外键及缺失标记变化标记为 review。类型变化时，原有的 `type` 记录后紧跟同字段的 `fieldConstraints` 记录。`before` 和 `after` 列出两侧生效的全部字段约束，含默认值。例如从必填整数改为可选数值，能直接看到 `required` 从 `true` 变为 `false`。复合主键仅重排时输出 `primaryKeyOrder`，其 `impact` 为 `orderOnly`：同一批行的唯一性判定相同，按位置使用键元组的调用方仍可看到前后顺序。主键成员增删或替换继续输出 `primaryKey / review`。结果仅说明各条规则的潜在影响，元数据不参加比较。integer 的 minimum/maximum 任一侧超出 ±9007199254740991 时返回 review，对该侧输出 `{"precision":"outside-safe-integer-range"}`。此时请核对原始规则中的数字；即使两个输入相同也可能需要复核。比较成功（含发现差异）退出 0，规则无效退出 1，参数或文件错误退出 2。
 
 ## 逐行检查一张表
 
@@ -152,7 +152,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.7.0
+moon add Kleinrat/frictionless@0.8.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

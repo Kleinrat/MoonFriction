@@ -21,6 +21,21 @@ assert.equal(invalid.status,1);
 assert.equal(JSON.parse(invalid.stdout).errors[0].code,'enum');
 const dir = await mkdtemp(path.join(tmpdir(),'mf-schema-diff-'));
 try {
+  const first = path.join(dir, 'first.json');
+  const second = path.join(dir, 'second.json');
+  const fields = [{name:'a', type:'integer', constraints:{required:true}}, {name:'b'}];
+  await writeFile(first, JSON.stringify({fields, primaryKey:['a','b']}));
+  await writeFile(second, JSON.stringify({
+    fields:[{name:'a', type:'number'}, fields[1]], primaryKey:['b','a']
+  }));
+  const [type, constraints, key] = compare(first, second);
+  assert.deepEqual([type.rule, type.before, type.after], ['type', 'integer', 'number']);
+  assert.deepEqual([constraints.field, constraints.rule, constraints.impact], ['a', 'fieldConstraints', 'review']);
+  assert.equal(constraints.before.required, true);
+  assert.equal(constraints.after.required, false);
+  assert.deepEqual(key, {field:'', rule:'primaryKeyOrder', impact:'orderOnly',
+    before:['a','b'], after:['b','a']});
+
   const bad = path.join(dir, 'invalid.json');
   await writeFile(bad,'{');
   for (const [a,b,side] of [[old,bad,'new'],[bad,current,'old']]) {

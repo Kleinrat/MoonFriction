@@ -2,7 +2,7 @@
 Run after building: python scripts/test_reference.py (in a dedicated reference venv).
 """
 from pathlib import Path
-import json, shutil, subprocess, tempfile
+import csv, hashlib, json, shutil, subprocess, tempfile
 import frictionless
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,6 +17,43 @@ CASES = [
 ]
 with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
     work = Path(temporary)
+    example = ROOT / 'examples/schema-diff'
+    for version, expected in [('old', True), ('new', False)]:
+        schema = frictionless.Schema.from_descriptor(json.loads((example / f'{version}.json').read_text()))
+        resource = frictionless.Resource(path='orders.csv', basepath=str(example), schema=schema)
+        assert resource.validate().valid == expected, ('schema diff witness', version)
+    print('schema-diff-order-reference PASS')
+
+    tz = ROOT / 'examples/iana-tzdb'
+    data = tz / 'zones.csv'
+    assert hashlib.sha256(data.read_bytes()).hexdigest() == '245e82d730c1fff286117da6e34241ca70704b57113385d2f282a9c4a631195a'
+    with data.open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+    affected = [i for i, row in enumerate(rows, 1) if len(row['country_codes']) > 2]
+    assert len(rows) == 312 and len(affected) == 34
+    cli = ['node', str(ROOT / 'scripts/cli.mjs')]
+    comparison = subprocess.check_output(cli + ['schema', 'diff', str(tz / 'schema.json'),
+                                                str(tz / 'single-country.schema.json')])
+    change, = json.loads(comparison)['changes']
+    assert (change['field'], change['rule'], change['impact'], change['before'], change['after']) == (
+        'country_codes', 'maxLength', 'tightened', None, 2)
+    for schema_file, expected in [('schema.json', []), ('single-country.schema.json', affected)]:
+        schema = frictionless.Schema.from_descriptor(json.loads((tz / schema_file).read_text()))
+        report = frictionless.Resource(path='zones.csv', basepath=str(tz), schema=schema).validate()
+        diagnostics = report.to_dict()['tasks'][0]['errors']
+        # Frictionless counts the header; MoonFriction starts with the first data record.
+        assert report.valid == (not expected)
+        assert [(e['rowNumber'] - 1, e['fieldName']) for e in diagnostics] == [
+            (i, 'country_codes') for i in expected]
+        checked = subprocess.run(cli + ['validate-stream', str(tz / schema_file), str(data),
+                                        '--max-errors', '100'], capture_output=True, text=True)
+        actual = json.loads(checked.stdout)
+        assert checked.returncode == int(bool(expected)) and actual['complete']
+        assert (actual['rows'], actual['error_count']) == (312, len(expected))
+        assert [(e['row'], e['field'], e['code']) for e in actual['errors']] == [
+            (i, 'country_codes', 'maxLength') for i in expected]
+    print('IANA tzdb 2025b: all 312 rows checked; 34 affected records match Frictionless')
+
     for name, filename, contents, expected in CASES:
         dest = work / name
         shutil.copytree(ROOT / 'examples/shop', dest)

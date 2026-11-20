@@ -12,6 +12,8 @@ pub fn open_csv_stream(String, String, String, String, Int32) -> CsvSession
 
 pub fn push_csv_chunk(CsvSession, String) -> Bool
 
+pub fn schema_diff_json(String, String) -> String
+
 pub fn validate_json(String) -> String
 
 pub fn validate_json_files(String, String) -> String

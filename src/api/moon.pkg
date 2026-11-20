@@ -10,6 +10,7 @@ options(
         "open_csv_stream",
         "push_csv_chunk",
         "finish_csv_stream",
+        "schema_diff_json",
         "inspect_json",
         "validate_json",
         "infer_json",

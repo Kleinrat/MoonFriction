@@ -1,0 +1,6 @@
+{
+  "name":"iana-tzdb-2025b",
+  "title":"IANA tzdb 2025b zone1970 table",
+  "sources":[{"title":"IANA tzdata2025b","path":"https://data.iana.org/time-zones/releases/tzdata2025b.tar.gz"}],
+  "resources":[{"name":"zones","path":"zones.csv","format":"csv","schema":"schema.json"}]
+}

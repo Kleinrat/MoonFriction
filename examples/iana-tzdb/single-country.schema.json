@@ -1,0 +1,9 @@
+{
+  "fields": [
+    {"name":"zone","type":"string","constraints":{"required":true}},
+    {"name":"country_codes","type":"string","constraints":{"required":true,"maxLength":2}},
+    {"name":"coordinates","type":"string","constraints":{"required":true}},
+    {"name":"comment","type":"string"}
+  ],
+  "primaryKey":"zone"
+}

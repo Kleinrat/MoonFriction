@@ -4,3 +4,5 @@
 - CSV parsing reuses moonbit-community/NyaCSV 0.3.4 (Apache-2.0): https://github.com/moonbit-community/NyaCSV . Dependency source is not vendored. The Apache-2.0 license is retained in third_party/NyaCSV-APACHE-2.0.txt for bundled distributions. Our strict quote-framing guard is a separate implementation, not a replacement parser.
 - Implementation targets an explicit subset of the Frictionless Data Package v1 and Table Schema v1 specifications at https://specs.frictionlessdata.io/ . It is not a port of the Python Framework and is not endorsed by Frictionless.
 - Frictionless Framework 5.21.0 is used only as an optional independent test oracle. It is not a runtime dependency of the library or CLI.
+
+- The example CSV in examples/iana-tzdb is derived from the public-domain zone1970.tab in IANA tzdata2025b. It preserves the data records and changes the column order, header and delimited-file encoding. See the example README for upstream attribution, license, hashes and reproduction.

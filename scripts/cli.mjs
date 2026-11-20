@@ -3,7 +3,7 @@ import {readFile,realpath,stat,mkdtemp,mkdir,writeFile,rename,rm} from 'node:fs/
 import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {inspect_json,validate_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
+import {schema_diff_json,inspect_json,validate_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
 const decode=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
 async function readPackageFile(base, relative) {
   const file = await realpath(path.resolve(base, relative));
@@ -141,8 +141,18 @@ export async function validateStream(schemaPath, csvPath, args = [], highWaterMa
 if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLToPath(import.meta.url)){
   const [command,file,...args]=process.argv.slice(2);
   const [destination] = args;
-  if(!['inspect','validate','export','validate-json','validate-stream'].includes(command)||!file||((command==='export'||command==='validate-json'||command==='validate-stream')&&!destination)){
-    console.error('Usage: node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
+  if (command === 'schema' && file === 'diff' && args.length === 2) {
+    try {
+      const [oldText, newText] = await Promise.all(args.map(async f => decode(await readFile(f))));
+      const result = schema_diff_json(oldText, newText);
+      console.log(result);
+      process.exitCode = JSON.parse(result).ok ? 0 : 1;
+    } catch (error) {
+      console.error(JSON.stringify({ok:false,error:error.message}));
+      process.exitCode = 2;
+    }
+  } else if(!['inspect','validate','export','validate-json','validate-stream'].includes(command)||!file||((command==='export'||command==='validate-json'||command==='validate-stream')&&!destination)){
+    console.error('Usage: node scripts/cli.mjs schema diff OLD.json NEW.json\n       node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
   }else{
     try{
       let bundle;

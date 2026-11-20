@@ -31,6 +31,7 @@ jobs:
           moon run src/main --target js
           node scripts/test_host.mjs
           node scripts/test_stream_csv.mjs
+          node scripts/test_schema_diff.mjs
           node scripts/test_beginner.mjs
           node scripts/test_infer.mjs
           node scripts/check_diagnostics.mjs

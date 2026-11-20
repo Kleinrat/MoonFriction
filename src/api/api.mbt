@@ -215,3 +215,22 @@ pub fn infer_json(text : String) -> String {
         } : Json).stringify()
   }
 }
+
+///|
+pub fn schema_diff_json(old_text : String, new_text : String) -> String {
+  let schemas = []
+  for (side, text) in [("old", old_text), ("new", new_text)] {
+    match @core.parse_table_schema(text) {
+      Err(errors) =>
+        return (
+          { "ok": false, "schema": side, "errors": @json.to_json(errors) } :
+          Json).stringify()
+      Ok(schema) => schemas.push(schema)
+    }
+  }
+  (
+    {
+      "ok": true,
+      "changes": @json.to_json(@core.diff_table_schemas(schemas[0], schemas[1])),
+    } : Json).stringify()
+}

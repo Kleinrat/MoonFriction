@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.6.0 新增大 CSV 文件流式校验命令，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.6.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.6.0)。支持范围是明确子集，不宣称完整标准兼容。
+0.7.0 新增 Table Schema 规则比较，支持大 CSV 文件流式校验，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.7.0](https://mooncakes.io/docs/Kleinrat/frictionless@0.7.0)。支持范围是明确子集，不宣称完整标准兼容。
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -22,6 +22,8 @@
 - 从 CSV 表头和样本生成保守、可编辑的 Table Schema 草稿，并明确提示采样范围与歧义。
 
 三个合成示例：商品与订单、学生与成绩、传感器与读数。它们用于验证数据交换能力，不代表真实用户采用。
+
+公开数据接入示例使用 IANA tzdb 2025b 的 312 条时区记录，比较两版规则并定位受影响的 34 条记录。[可复现步骤与结果](examples/iana-tzdb/README.md)
 
 ## 独立业务接入示例
 
@@ -65,6 +67,21 @@ println(report.valid()) // false：主键重复
 ```
 
 可运行的全新消费者见 [`examples/standalone-consumer`](examples/standalone-consumer)；`scripts/test_embedding.py` 会把它作为独立项目编译。完整说明见[独立 Table Schema](docs/zh/standalone-schema.md)。
+
+## 比较两版规则
+
+从仓库根目录运行。唯一一条订单状态为 draft；旧规则允许 draft 和 paid，新规则只允许 paid。
+
+```sh
+sh scripts/build.sh
+node scripts/cli.mjs schema diff examples/schema-diff/old.json examples/schema-diff/new.json
+node scripts/cli.mjs validate-stream examples/schema-diff/old.json examples/schema-diff/orders.csv
+node scripts/cli.mjs validate-stream examples/schema-diff/new.json examples/schema-diff/orders.csv
+```
+
+比较命令返回字段、规则、旧值、新值及影响。此例返回 `status / enum / tightened`，移除成员为 draft。随后两条校验命令分别通过和报告第 1 条订单的枚举错误。交换规则顺序会得到 relaxed。
+
+MoonBit 接口为 `diff_table_schemas(old, current)`，输入由 `parse_table_schema` 解析。按字段名比较 required、unique、enum、数值及长度上下限；枚举同时增删时分别报告两个方向及对应成员。字段增删、顺序或类型改变、主外键及缺失标记变化标记为 review。类型变更的字段整体交由人工复核；不会猜测改名。结果仅说明各条规则的潜在影响，元数据不参加比较。integer 的 minimum/maximum 任一侧超出 ±9007199254740991 时返回 review，对该侧输出 `{"precision":"outside-safe-integer-range"}`。此时请核对原始规则中的数字；即使两个输入相同也可能需要复核。比较成功（含发现差异）退出 0，规则无效退出 1，参数或文件错误退出 2。
 
 ## 逐行检查一张表
 
@@ -135,7 +152,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.6.0
+moon add Kleinrat/frictionless@0.7.0
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -198,7 +215,7 @@ python3 -m venv .venv-reference
 .venv-reference/bin/python scripts/test_reference.py
 ```
 
-当前51项 MoonBit 测试通过；中文说明覆盖26种诊断代码，教程19个命令块由自动检查实际执行；host集成覆盖导出、内容保留、覆盖拒绝和路径包含检查；三个独立 MoonBit 消费者项目可以编译运行。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包和自动推断草稿能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
+CI 运行 MoonBit 单元测试、中文诊断映射检查、教程命令和独立 MoonBit 消费者示例；host 集成测试覆盖导出、内容保留、覆盖拒绝和路径包含检查。使用 Frictionless Framework 5.21.0 核对7个正反用例、另外两个示例，并验证导出包和自动推断草稿能被该工具读取。这些结果仅证明已测场景，不等价于完整规范认证。
 
 ## 兼容性与边界
 

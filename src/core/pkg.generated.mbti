@@ -11,6 +11,8 @@ pub fn cast_cell(String, FieldType, Array[String]) -> Result[Cell, String]
 
 pub fn cast_json_cell(@json.Json, FieldType, Array[String]) -> Result[Cell, String]
 
+pub fn diff_table_schemas(TableSchema, TableSchema) -> Array[SchemaChange]
+
 pub fn field(String, FieldType) -> Field
 
 pub fn infer_table_schema(Array[String], Array[Array[String]], sample_limit? : Int32, missing_values? : Array[String]) -> SchemaInference
@@ -159,6 +161,16 @@ pub fn RowValidator::feed(Self, Array[String]) -> Unit
 pub fn RowValidator::feed_json(Self, @json.Json) -> Unit
 pub fn RowValidator::finish(Self) -> RowSummary
 pub fn RowValidator::new(String, TableSchema, Array[String], max_errors? : Int32) -> Result[Self, Array[Diagnostic]]
+
+#derive(@debug.Debug, @json.ToJson)
+pub(all) struct SchemaChange {
+  field : String
+  rule : String
+  impact : String
+  before : @json.Json
+  after : @json.Json
+  members : Array[@json.Json]?
+}
 
 #derive(@debug.Debug)
 pub(all) struct SchemaInference {

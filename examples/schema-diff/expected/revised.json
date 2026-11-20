@@ -1,0 +1,7 @@
+{
+  "ok": true,
+  "changes": [
+    {"field":"status","rule":"enum","impact":"tightened","before":["draft","paid"],"after":["paid","shipped"],"members":["draft"]},
+    {"field":"status","rule":"enum","impact":"relaxed","before":["draft","paid"],"after":["paid","shipped"],"members":["shipped"]}
+  ]
+}

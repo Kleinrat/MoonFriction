@@ -1,0 +1,7 @@
+{
+  "ok": false,
+  "schema": "new",
+  "errors": [
+    {"code":"unsupported","resource":"","row":0,"field":"status","message":"Unsupported field type"}
+  ]
+}

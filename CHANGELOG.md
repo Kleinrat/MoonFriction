@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.10.0 — 2026-11-26
+
+- 自定义日期和时钟格式支持英文月份与星期、年内日序、ISO 周日期、12 小时制和 C locale 格式简写。
+- GeoJSON 检查边界框维数、范围及跨国际日期变更线的经度。TopoJSON 对解码后的坐标和各几何对象检查边界框。
+- 新增包和资源的自定义 profile 校验。MoonBit API 接收 JSON Schema 文档映射，CLI 可用 `--profile-schemas FILE` 传入同一份规则。
+- 增加与 Frictionless Framework 和 Python jsonschema 的正反例及导出读回对照测试。仍待补齐的规范条目见[兼容性记录](docs/COMPATIBILITY.md)。
+
 ## 0.9.0 — 2026-11-26
 
 - 混合包校验支持多分片 CSV、内嵌 JSON 及显式启用的 HTTP(S) 资源、描述符和外部规则。

@@ -195,3 +195,65 @@ test "string formats validate components beyond simple character allowlists" {
   assert_true(valid_base64("MQ==") && valid_base64("MTI="))
   assert_false(valid_base64("MR==") || valid_base64("MTJ="))
 }
+
+///|
+test "GeoJSON bbox checks dimensions, containment and antimeridian ordering" {
+  for
+    (text, valid) in [
+      (
+        (
+          #|{"type":"MultiPoint","coordinates":[[177,-20],[-178,-16]],"bbox":[177,-20,-178,-16]}
+        ),
+        true,
+      ),
+      (
+        (
+          #|{"type":"FeatureCollection","features":[{"type":"Feature","properties":null,"geometry":{"type":"Point","coordinates":[1,2,3]}}],"bbox":[0,0,0,2,2,3]}
+        ),
+        true,
+      ),
+      (
+        (
+          #|{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[0,-18]}],"bbox":[177,-20,-178,-16]}
+        ),
+        false,
+      ),
+      (
+        (
+          #|{"type":"Point","coordinates":[1,2,3],"bbox":[0,0,2,2]}
+        ),
+        false,
+      ),
+      (
+        (
+          #|{"type":"Point","coordinates":[1,2],"bbox":[0,3,2,2]}
+        ),
+        false,
+      ),
+      (
+        (
+          #|{"type":"Point","coordinates":[180,0],"bbox":[-180,-1,-177,1]}
+        ),
+        true,
+      ),
+    ] {
+    let value = @json.parse(text)
+    assert_eq(geojson_cell(value) is Ok(_), valid)
+  }
+}
+
+///|
+test "TopoJSON bbox uses decoded delta arcs and independently bounded geometries" {
+  let text =
+    #|{"type":"Topology","transform":{"scale":[2,3],"translate":[100,50]},"arcs":[[[1,2],[1,2],[1,-1]]],"objects":{"river":{"type":"LineString","arcs":[-1],"bbox":[102,56,106,62]},"point":{"type":"Point","coordinates":[0,0]}},"bbox":[100,50,106,62]}
+  assert_true(topojson_cell(@json.parse(text)) is Ok(_))
+  for
+    invalid in [
+      text.replace_all(old="106,62", new="106,59"),
+      text.replace_all(old="102,56,106,62", new="0,0,3,4"),
+      text.replace_all(old="100,50,106,62", new="106,50,100,62"),
+      text.replace_all(old="100,50,106,62", new="100,50,0,106,62,9"),
+    ] {
+    assert_true(topojson_cell(@json.parse(invalid)) is Err(_))
+  }
+}

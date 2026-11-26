@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.9.0 增加混合数据包校验、精确数值和更多日期、地理及 XML Schema 正则能力。发布版的规范覆盖情况与后续符合性目标见[兼容性记录](docs/COMPATIBILITY.md)。[Mooncakes 安装入口](https://mooncakes.io/docs/Kleinrat/frictionless@0.9.0)
+0.10.0 增加自定义日期格式、GeoJSON 和 TopoJSON 边界框校验，以及包级和资源级的自定义 profile 校验。发布版的规范覆盖情况与后续符合性目标见[兼容性记录](docs/COMPATIBILITY.md)。[Mooncakes 安装入口](https://mooncakes.io/docs/Kleinrat/frictionless@0.10.0)
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -158,7 +158,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.9.0
+moon add Kleinrat/frictionless@0.10.0
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -227,6 +227,8 @@ CI 运行 MoonBit 单元测试、中文诊断映射检查、教程命令和独�
 ## 兼容性与边界
 
 开发目标为完整实现 **Table Schema v1** 与 **Data Package v1**。当前源码的已验证行为和待补规范条目见[兼容范围与验证状态](docs/COMPATIBILITY.md)。
+
+校验声明了自定义 profile 的包时，可以用 `--profile-schemas profiles.json` 提供 profile ID 或 URL 到 JSON Schema 文档的映射。MoonBit 调用方可通过 `DataPackage::validate_profiles` 使用同一套校验。示例命令为 `node scripts/cli.mjs inspect-package datapackage.json --profile-schemas profiles.json`。
 
 缺失值按物理字符串精确匹配后再转换。省略 missingValues 时采用 `[""]`；显式空数组保留空字符串。空 CSV 记录不被跳过，BOM 在 CLI 与库接口中一致处理。记录号是逻辑数据记录号，不是包含表头的物理文件行号。
 

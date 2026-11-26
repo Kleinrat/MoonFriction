@@ -18,11 +18,15 @@ pub fn push_csv_chunk(CsvSession, String) -> Bool
 
 pub fn schema_diff_json(String, String) -> String
 
+pub fn validate_data_package_profiles_json(String, String) -> String
+
 pub fn validate_json(String) -> String
 
 pub fn validate_json_files(String, String) -> String
 
 pub fn validate_mixed_json(String, String) -> String
+
+pub fn validate_profiled_tables_json(String, String, String, String) -> String
 
 // Errors
 

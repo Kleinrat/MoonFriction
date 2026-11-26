@@ -266,7 +266,40 @@ pub fn inspect_data_package_json(text : String) -> String {
         }
         summary
       })
-      ({ "ok": true, "resources": @json.to_json(resources) } : Json).stringify()
+      let result : Json = { "ok": true, "resources": @json.to_json(resources) }
+      let profiles = descriptor.custom_profiles()
+      if !profiles.is_empty() && result is Object(fields) {
+        fields["profiles"] = @json.to_json(profiles)
+      }
+      result.stringify()
+    }
+  }
+}
+
+///|
+pub fn validate_data_package_profiles_json(
+  text : String,
+  documents : String,
+) -> String {
+  match @core.parse_data_package(text) {
+    Err(errors) =>
+      ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+    Ok(descriptor) => {
+      guard (@json.parse(documents, preserve_number_repr=true) catch {
+          _ => Json::null()
+        })
+        is Object(schemas) else {
+        let error : Json = {
+          "code": "descriptor",
+          "resource": "",
+          "row": 0,
+          "field": "profile",
+          "message": "Expected a JSON object keyed by profile identifiers or URLs",
+        }
+        return ({ "ok": false, "errors": Json::array([error]) } : Json).stringify()
+      }
+      let errors = descriptor.validate_profiles(schemas)
+      ({ "ok": errors.is_empty(), "errors": @json.to_json(errors) } : Json).stringify()
     }
   }
 }
@@ -282,7 +315,15 @@ pub fn check_mixed_descriptor_json(text : String) -> String {
 
 ///|
 pub fn validate_mixed_json(descriptor : String, inputs : String) -> String {
-  let parsed = match @core.parse_mixed_descriptor(descriptor) {
+  validate_mixed_result(@core.parse_mixed_descriptor(descriptor), inputs)
+}
+
+///|
+fn validate_mixed_result(
+  descriptor : Result[@core.Descriptor, Array[@core.Diagnostic]],
+  inputs : String,
+) -> String {
+  let parsed = match descriptor {
     Ok(value) => value
     Err(errors) =>
       return ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
@@ -294,4 +335,35 @@ pub fn validate_mixed_json(descriptor : String, inputs : String) -> String {
       return "{\"ok\":false,\"errors\":[{\"code\":\"input\",\"message\":\"Expected named tabular resource parts\"}]}"
   }
   package_result(@core.validate_mixed_package(parsed, sources))
+}
+
+///|
+pub fn validate_profiled_tables_json(
+  descriptor : String,
+  documents : String,
+  references : String,
+  inputs : String,
+) -> String {
+  guard (@json.parse(documents, preserve_number_repr=true) catch {
+      _ => Json::null()
+    })
+    is Object(profile_schemas) &&
+    (@json.parse(references, preserve_number_repr=true) catch {
+      _ => Json::null()
+    })
+    is Object(resolved_documents) else {
+    return "{\"ok\":false,\"errors\":[{\"code\":\"input\",\"message\":\"Expected maps of profile and resource documents\"}]}"
+  }
+  let parsed = @core.parse_profiled_mixed_descriptor(
+    descriptor, profile_schemas, resolved_documents,
+  )
+  if inputs == "" {
+    match parsed {
+      Ok(_) => "{\"ok\":true}"
+      Err(errors) =>
+        ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+    }
+  } else {
+    validate_mixed_result(parsed, inputs)
+  }
 }

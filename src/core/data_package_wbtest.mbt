@@ -105,3 +105,44 @@ test "Data Package accepts registry license identifiers and license URLs" {
   let errors = parse_data_package(unknown).unwrap_err()
   assert_true(errors.any(e => e.resource == "readme" && e.field == "licenses"))
 }
+
+///|
+test "package and resource profiles validate original descriptors and supplied refs" {
+  let manifest =
+    #|{"profile":"inventory-package","title":"Inventory","resources":[{"name":"items","data":[],"profile":"https://example.org/resource.json","retention":30}]}
+  let package_schema = @json.parse(
+    (
+      #|{"type":"object","required":["title"]}
+    ),
+  )
+  let resource_schema = @json.parse(
+    (
+      #|{"$schema":"https://json-schema.org/draft/2020-12/schema","properties":{"retention":{"$ref":"days.json"}},"required":["retention"]}
+    ),
+  )
+  let days = @json.parse(
+    (
+      #|{"type":"integer","minimum":1}
+    ),
+  )
+  let profile_docs = Map([
+    ("inventory-package", package_schema),
+    ("https://example.org/resource.json", resource_schema),
+    ("https://example.org/days.json", days),
+  ])
+  let data = parse_data_package(manifest).unwrap()
+  assert_eq(data.custom_profiles().length(), 2)
+  assert_true(data.validate_profiles(profile_docs).is_empty())
+  let invalid = parse_data_package(
+    manifest.replace_all(old="\"retention\":30", new="\"retention\":0"),
+  ).unwrap()
+  let errors = invalid.validate_profiles(profile_docs)
+  assert_eq(errors.length(), 1)
+  assert_eq(errors[0].resource, "items")
+  assert_true(errors[0].field.has_prefix("profile"))
+  assert_true(data.validate_profiles(Map([])).all(e => e.code == "unsupported"))
+  profile_docs.remove("https://example.org/days.json")
+  assert_true(
+    data.validate_profiles(profile_docs).any(e => e.resource == "items"),
+  )
+}

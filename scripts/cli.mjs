@@ -4,7 +4,7 @@ import {createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {schema_diff_json,inspect_json,inspect_data_package_json,check_mixed_descriptor_json,validate_mixed_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
+import {schema_diff_json,inspect_json,inspect_data_package_json,validate_data_package_profiles_json,check_mixed_descriptor_json,validate_mixed_json,validate_profiled_tables_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
 const packageFileLimit = 16 * 1024 * 1024;
 const decode = (bytes, encoding = 'utf-8') => new TextDecoder(encoding, {fatal: true}).decode(bytes);
 const isRemote = value => /^https?:\/\//i.test(value);
@@ -107,8 +107,9 @@ async function readRelativePackageFile(base, relative) {
   return readRemoteResource(new URL(encoded, base).href);
 }
 
-export async function loadBundle(descriptorPath, {allowRemote = false} = {}) {
-  const {base, descriptorText, report: manifest} = await loadDataPackage(descriptorPath, false, allowRemote);
+export async function loadBundle(descriptorPath, {allowRemote = false, profileSchemas} = {}) {
+  const {base, descriptorText, report: manifest, profileDocuments} =
+    await loadDataPackage(descriptorPath, false, {allowRemote, profileSchemas});
   if (!manifest.ok) return {report: manifest};
   const descriptor = parseDocument(descriptorText);
   const locations = new Map(manifest.resources.map(item => [item.name, item]));
@@ -123,6 +124,7 @@ export async function loadBundle(descriptorPath, {allowRemote = false} = {}) {
     }
     return cache.get(location);
   }
+  const references = Object.create(null);
   let hasReferences = false;
   for (const item of descriptor.resources) {
     const info = locations.get(item.name);
@@ -141,12 +143,24 @@ export async function loadBundle(descriptorPath, {allowRemote = false} = {}) {
       if (!document || typeof document !== 'object' || Array.isArray(document) || JSON.isRawJSON(document)) {
         return resourceError(item.name, field, 'Expected a JSON object in ' + ref);
       }
-      item[field] = document;
-      hasReferences = true;
+      if (profileDocuments) {
+        references[ref] = document;
+        if (!isRemote(ref)) {
+          if (ref === 'datapackage.json') throw Error('A schema or dialect cannot overwrite the exported datapackage.json');
+          files.set(ref, {path: ref, bytes});
+        }
+      } else {
+        item[field] = document;
+        hasReferences = true;
+      }
     }
   }
   const text = hasReferences ? JSON.stringify(descriptor) : descriptorText;
-  const preflight = JSON.parse(check_mixed_descriptor_json(text));
+  const resolved = profileDocuments && JSON.stringify(references);
+  const profiled = resolved
+    ? inputs => validate_profiled_tables_json(text, profileDocuments, resolved, inputs)
+    : null;
+  const preflight = JSON.parse(profiled ? profiled('') : check_mixed_descriptor_json(text));
   if (!preflight.ok) return {report: preflight};
   const inputs = [];
   for (const resource of manifest.resources) {
@@ -167,7 +181,9 @@ export async function loadBundle(descriptorPath, {allowRemote = false} = {}) {
   }
   return {
     descriptor: JSON.parse(text), descriptorText: text, files: [...files.values()],
-    report: JSON.parse(validate_mixed_json(text, JSON.stringify(inputs))),
+    report: JSON.parse(profiled
+      ? profiled(JSON.stringify(inputs))
+      : validate_mixed_json(text, JSON.stringify(inputs))),
   };
 }
 export async function exportBundle(bundle,destination){
@@ -201,7 +217,7 @@ function verifyResource(resource, parts) {
     }
   }
 }
-async function loadDataPackage(descriptorPath, readLocalFiles, allowRemote = false) {
+async function loadDataPackage(descriptorPath, readLocalFiles, {allowRemote = false, profileSchemas} = {}) {
   let base;
   let descriptorBytes;
   if (isRemote(descriptorPath)) {
@@ -214,7 +230,26 @@ async function loadDataPackage(descriptorPath, readLocalFiles, allowRemote = fal
     descriptorBytes = await readFile(full);
   }
   const descriptorText = decode(descriptorBytes);
-  const report = JSON.parse(inspect_data_package_json(descriptorText));
+  let report = JSON.parse(inspect_data_package_json(descriptorText));
+  let profileDocuments;
+  if (report.ok && report.profiles) {
+    const documents = Object.create(null);
+    if (profileSchemas) {
+      const supplied = parseDocument(decode(await readFile(profileSchemas)));
+      if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied) || JSON.isRawJSON(supplied)) {
+        throw Error('Expected a JSON object in --profile-schemas');
+      }
+      Object.assign(documents, supplied);
+    }
+    for (const id of report.profiles) {
+      if (!Object.hasOwn(documents, id) && allowRemote && isRemote(id)) {
+        documents[id] = parseDocument(decode(await readRemoteResource(id)));
+      }
+    }
+    profileDocuments = JSON.stringify(documents);
+    const validation = JSON.parse(validate_data_package_profiles_json(descriptorText, profileDocuments));
+    if (!validation.ok) report = validation;
+  }
   const files = new Map();
   if (report.ok && readLocalFiles) {
     const descriptorPaths = new Set();
@@ -247,7 +282,7 @@ async function loadDataPackage(descriptorPath, readLocalFiles, allowRemote = fal
       if (resource.location === 'local') verifyResource(resource, resource.paths.map(file => files.get(file).bytes));
     }
   }
-  return {base, descriptorText, report, files: [...files.values()]};
+  return {base, descriptorText, report, profileDocuments, files: [...files.values()]};
 }
 export async function checkJsonFiles(descriptorPath, mappings) {
   const {text: descriptor, report} = await loadDescriptor(descriptorPath);
@@ -296,6 +331,23 @@ export async function validateStream(schemaPath, csvPath, args = [], highWaterMa
   }
   return JSON.parse(finish_csv_stream(session));
 }
+function packageOptions(options) {
+  let allowRemote = false;
+  let profileSchemas;
+  for (let index = 0; index < options.length; index++) {
+    const option = options[index];
+    if (option === '--allow-remote' && !allowRemote) {
+      allowRemote = true;
+    } else if (option === '--profile-schemas' && !profileSchemas &&
+               options[index + 1] && !options[index + 1].startsWith('--')) {
+      profileSchemas = options[++index];
+    } else {
+      throw Error('Invalid command arguments');
+    }
+  }
+  return {allowRemote, profileSchemas};
+}
+
 if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLToPath(import.meta.url)){
   const [command,file,...args]=process.argv.slice(2);
   const [destination] = args;
@@ -313,11 +365,10 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
     try {
       const exporting = command === 'export-package';
       const options = exporting ? args.slice(1) : args;
-      if ((exporting && (!destination || destination === '--allow-remote')) ||
-          options.length > 1 || options.some(option => option !== '--allow-remote')) {
-        throw Error('Invalid command arguments');
+      if (exporting && (!destination || destination.startsWith('--'))) {
+        throw Error('Expected export destination');
       }
-      const bundle = await loadDataPackage(file, exporting, options.includes('--allow-remote'));
+      const bundle = await loadDataPackage(file, exporting, packageOptions(options));
       if (exporting && bundle.report.ok) await exportBundle(bundle, destination);
       console.log(JSON.stringify(bundle.report, null, 2));
       process.exitCode = bundle.report.ok ? 0 : 1;
@@ -326,7 +377,7 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
       process.exitCode = 2;
     }
   } else if(!['inspect','validate','export','validate-json','validate-stream'].includes(command)||!file||((command==='export'||command==='validate-json'||command==='validate-stream')&&!destination)){
-    console.error('Usage: node scripts/cli.mjs schema diff OLD.json NEW.json\n       node scripts/cli.mjs inspect datapackage.json\n       node scripts/cli.mjs validate datapackage.json [--allow-remote]\n       node scripts/cli.mjs inspect-package datapackage.json [--allow-remote]\n       node scripts/cli.mjs export-package datapackage.json DESTINATION [--allow-remote]\n       node scripts/cli.mjs export datapackage.json DESTINATION [--allow-remote]\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
+    console.error('Usage: node scripts/cli.mjs schema diff OLD.json NEW.json\n       node scripts/cli.mjs inspect datapackage.json\n       node scripts/cli.mjs validate datapackage.json [--allow-remote] [--profile-schemas FILE]\n       node scripts/cli.mjs inspect-package datapackage.json [--allow-remote] [--profile-schemas FILE]\n       node scripts/cli.mjs export-package datapackage.json DESTINATION [--allow-remote] [--profile-schemas FILE]\n       node scripts/cli.mjs export datapackage.json DESTINATION [--allow-remote] [--profile-schemas FILE]\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
   }else{
     try{
       let bundle;
@@ -336,13 +387,13 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
         bundle = {report: await checkJsonFiles(file, args)};
       } else {
         const options = command === 'export' ? args.slice(1) : args;
-        if (options.length > 1 || options.some(option => option !== '--allow-remote') ||
-            (command === 'inspect' && options.length > 0)) {
+        if ((command === 'inspect' && options.length > 0) ||
+            (command === 'export' && destination.startsWith('--'))) {
           throw Error('Invalid command arguments');
         }
         bundle = command === 'inspect'
           ? await loadDescriptor(file)
-          : await loadBundle(file, {allowRemote: options.includes('--allow-remote')});
+          : await loadBundle(file, packageOptions(options));
       }
       if(command==='export'&&bundle.report.ok) await exportBundle(bundle,destination);
       console.log(JSON.stringify(bundle.report,null,2));process.exitCode=bundle.report.ok?0:1;

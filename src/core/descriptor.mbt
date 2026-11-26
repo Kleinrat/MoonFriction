@@ -164,15 +164,39 @@ pub fn parse_descriptor(text : String) -> Result[Descriptor, Array[Diagnostic]] 
 }
 
 ///|
-/// Parse CSV/JSON tabular rules over a general v1 manifest. The host resolves
-/// referenced schema and dialect objects before calling this entry point.
+/// Parse CSV/JSON tabular rules over a general v1 manifest.
 pub fn parse_mixed_descriptor(
   text : String,
 ) -> Result[Descriptor, Array[Diagnostic]] {
+  parse_profiled_mixed_descriptor(text, Map([]), Map([]))
+}
+
+///|
+/// Validate profile schemas against the original manifest before evaluating
+/// Table Schemas and dialects supplied by the host under their locator keys.
+pub fn parse_profiled_mixed_descriptor(
+  text : String,
+  profile_schemas : Map[String, Json],
+  resolved_documents : Map[String, Json],
+) -> Result[Descriptor, Array[Diagnostic]] {
   match parse_data_package(text) {
     Err(errors) => Err(errors)
-    Ok(descriptor) =>
+    Ok(descriptor) => {
+      let errors = descriptor.validate_profiles(profile_schemas)
+      if !errors.is_empty() {
+        return Err(errors)
+      }
+      for resource in descriptor.resources {
+        guard resource.metadata is Object(fields) else { continue }
+        for field in ["schema", "dialect"] {
+          if fields.get(field) is Some(String(locator)) &&
+            resolved_documents.get(locator) is Some(Object(_) as document) {
+            fields[field] = document
+          }
+        }
+      }
       parse_tabular_descriptor_value(descriptor.original, mixed=true)
+    }
   }
 }
 
@@ -197,7 +221,8 @@ fn parse_tabular_descriptor_value(
     )
   }
   let profile = prop(original, "profile")
-  if profile != Json::null() &&
+  if !mixed &&
+    profile != Json::null() &&
     profile != Json::string("data-package") &&
     profile != Json::string("tabular-data-package") {
     errors.push(
@@ -273,7 +298,8 @@ fn parse_tabular_descriptor_value(
         ),
       )
     }
-    if prop(item, "profile") != Json::null() &&
+    if !mixed &&
+      prop(item, "profile") != Json::null() &&
       prop(item, "profile") != Json::string("tabular-data-resource") {
       errors.push(
         issue(

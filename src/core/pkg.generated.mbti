@@ -39,6 +39,8 @@ pub fn parse_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
 
 pub fn parse_mixed_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
 
+pub fn parse_profiled_mixed_descriptor(String, Map[String, @json.Json], Map[String, @json.Json]) -> Result[Descriptor, Array[Diagnostic]]
+
 pub fn parse_table_schema(String) -> Result[TableSchema, Array[Diagnostic]]
 
 pub fn safe_resource_path(String) -> Bool
@@ -95,6 +97,8 @@ pub(all) struct DataPackage {
   original : @json.Json
   resources : Array[DataResource]
 }
+pub fn DataPackage::custom_profiles(Self) -> Array[String]
+pub fn DataPackage::validate_profiles(Self, Map[String, @json.Json]) -> Array[Diagnostic]
 
 #derive(@debug.Debug)
 pub(all) struct DataResource {

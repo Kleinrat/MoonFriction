@@ -226,3 +226,38 @@ test "unsupported type and format combinations fail explicitly" {
     Ok("2024-01"),
   )
 }
+
+///|
+test "calendar names, ordinal dates, week dates and locale time formats normalize" {
+  for
+    (kind, raw, format, expected) in [
+      ("date", "29 Feb 2024", "%d %b %Y", "2024-02-29"),
+      ("date", "THURSDAY, February 29, 2024", "%A, %B %d, %Y", "2024-02-29"),
+      ("date", "2024-060", "%Y-%j", "2024-02-29"),
+      ("date", "2020-W53-7", "%G-W%V-%u", "2021-01-03"),
+      ("date", "2024 00 1", "%Y %U %w", "2024-01-01"),
+      ("date", "2024 01 1", "%Y %W %w", "2024-01-01"),
+      ("date", "2024-2-9", "%F", "2024-02-09"),
+      ("date", "02/29/24", "%x", "2024-02-29"),
+      ("time", "7:05 PM", "%I:%M %p", "19:05:00"),
+      ("time", "12:05:18 AM", "%r", "00:05:18"),
+      (
+        "datetime", "Thu Feb  29 12:01:02 2024 GMT", "%c %Z", "2024-02-29T12:01:02Z",
+      ),
+    ] {
+    assert_eq(normalize_temporal_format(kind, raw, format), Ok(expected))
+  }
+  for
+    (kind, raw, format) in [
+      ("date", "29 Feb 2023", "%d %b %Y"),
+      ("date", "2024-367", "%Y-%j"),
+      ("date", "2021-W53-1", "%G-W%V-%u"),
+      ("date", "2020-W01-0", "%G-W%V-%u"),
+      ("date", "2020-W01-1", "%Y-W%V-%u"),
+      ("time", "13:05 PM", "%I:%M %p"),
+      ("time", "12:05 ME", "%I:%M %p"),
+      ("datetime", "2024-02-29 12:05 EST", "%F %R %Z"),
+    ] {
+    assert_true(normalize_temporal_format(kind, raw, format) is Err(_))
+  }
+}

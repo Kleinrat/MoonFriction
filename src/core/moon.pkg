@@ -5,6 +5,7 @@ import {
   "moonbitlang/core/encoding/utf8",
   "moonbit-community/NyaCSV" @csv,
   "moonbitlang/core/string",
+  "moonbitstack/moonschema",
 }
 
 options(

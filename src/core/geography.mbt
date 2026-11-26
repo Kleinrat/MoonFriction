@@ -74,11 +74,11 @@ fn polygon(value : Json) -> Bool {
 
 ///|
 fn valid_geo_geometry(value : Json, budget : Int32) -> Bool {
-  if budget <= 0 || !geo_bbox(value) {
+  if budget <= 0 || !(value is Object(_)) {
     return false
   }
   let coords = prop(value, "coordinates")
-  match prop(value, "type") {
+  let valid = match prop(value, "type") {
     String("Point") => position(coords)
     String("MultiPoint") => json_items(coords, 0, position)
     String("LineString") => line(coords)
@@ -91,16 +91,118 @@ fn valid_geo_geometry(value : Json, budget : Int32) -> Bool {
       })
     _ => false
   }
+  valid && valid_geo_bbox(value)
 }
 
 ///|
-fn geo_bbox(value : Json) -> Bool {
+priv struct BoundingBox {
+  lower : Array[Double]
+  upper : Array[Double]
+  geographic : Bool
+}
+
+///|
+fn read_bbox(raw : Json, geographic : Bool) -> BoundingBox? {
+  guard raw is Array(values) && values.length() >= 4 && values.length() % 2 == 0 else {
+    return None
+  }
+  let dimension = values.length() / 2
+  let lower = []
+  let upper = []
+  for axis in 0..<dimension {
+    guard values[axis] is Number(low, ..) &&
+      values[axis + dimension] is Number(high, ..) &&
+      low.is_finite() &&
+      high.is_finite() else {
+      return None
+    }
+    if geographic && axis < 2 {
+      let limit = if axis == 0 { 180.0 } else { 90.0 }
+      if low < -limit || low > limit || high < -limit || high > limit {
+        return None
+      }
+    }
+    if !(geographic && axis == 0) && low > high {
+      return None
+    }
+    lower.push(low)
+    upper.push(high)
+  }
+  Some({ lower, upper, geographic, })
+}
+
+///|
+fn BoundingBox::contains(self : BoundingBox, position : Array[Double]) -> Bool {
+  guard position.length() == self.lower.length() else { return false }
+  for axis, coordinate in position {
+    let low = self.lower[axis]
+    let high = self.upper[axis]
+    if !coordinate.is_finite() {
+      return false
+    }
+    if self.geographic && axis == 0 {
+      let within = if low <= high {
+        coordinate >= low && coordinate <= high
+      } else {
+        coordinate >= low || coordinate <= high
+      }
+      let same_meridian = (coordinate == -180.0 && high == 180.0) ||
+        (coordinate == 180.0 && low == -180.0)
+      if !within && !same_meridian {
+        return false
+      }
+    } else if coordinate < low || coordinate > high {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn position_coordinates(value : Json) -> Array[Double] {
+  guard value is Array(items) else { abort("Invalid validated position") }
+  items.map(item => {
+    guard item is Number(coordinate, ..) else {
+      abort("Invalid validated coordinate")
+    }
+    coordinate
+  })
+}
+
+///|
+fn coordinate_array_in_box(coords : Json, box : BoundingBox) -> Bool {
+  guard coords is Array(items) else { return false }
+  if items.is_empty() {
+    return true
+  }
+  if items[0] is Number(_) {
+    box.contains(position_coordinates(coords))
+  } else {
+    items.all(item => coordinate_array_in_box(item, box))
+  }
+}
+
+///|
+fn geojson_in_box(value : Json, box : BoundingBox) -> Bool {
+  match prop(value, "type") {
+    String("Feature") => {
+      let geometry = prop(value, "geometry")
+      geometry is Null || geojson_in_box(geometry, box)
+    }
+    String("FeatureCollection") =>
+      json_items(prop(value, "features"), 0, item => geojson_in_box(item, box))
+    String("GeometryCollection") =>
+      json_items(prop(value, "geometries"), 0, item => geojson_in_box(item, box))
+    _ => coordinate_array_in_box(prop(value, "coordinates"), box)
+  }
+}
+
+///|
+fn valid_geo_bbox(value : Json) -> Bool {
   guard value is Object(fields) else { return false }
   match fields.get("bbox") {
     None => true
-    Some(Array(values)) =>
-      values.length() >= 4 && values.length() % 2 == 0 && values.all(geo_number)
-    _ => false
+    Some(raw) => read_bbox(raw, true) is Some(box) && geojson_in_box(value, box)
   }
 }
 
@@ -112,10 +214,10 @@ fn valid_geo_feature(value : Json) -> Bool {
   let geometry = fields.get("geometry")
   let properties = fields.get("properties")
   let id = fields.get("id")
-  geo_bbox(value) &&
   (geometry is Some(Null) || (geometry is Some(g) && valid_geo_geometry(g, 64))) &&
   properties is Some(Null | Object(_)) &&
-  (id is None || id is Some(String(_)) || (id is Some(v) && geo_number(v)))
+  (id is None || id is Some(String(_)) || (id is Some(v) && geo_number(v))) &&
+  valid_geo_bbox(value)
 }
 
 ///|
@@ -123,8 +225,8 @@ fn geojson_cell(value : Json) -> Result[Cell, String] {
   let valid = match prop(value, "type") {
     String("Feature") => valid_geo_feature(value)
     String("FeatureCollection") =>
-      geo_bbox(value) &&
-      json_items(prop(value, "features"), 0, valid_geo_feature)
+      json_items(prop(value, "features"), 0, valid_geo_feature) &&
+      valid_geo_bbox(value)
     _ => valid_geo_geometry(value, 64)
   }
   if valid {
@@ -156,20 +258,8 @@ fn topology_arc(value : Json, quantized : Bool) -> TopologyArc {
     Array(items) => items
     _ => abort("Invalid validated topology arc")
   }
-  fn coordinates(point : Json) -> Array[Double] {
-    match point {
-      Array(items) =>
-        items.map(item => {
-          match item {
-            Number(coordinate, ..) => coordinate
-            _ => abort("Invalid validated topology coordinate")
-          }
-        })
-      _ => abort("Invalid validated topology position")
-    }
-  }
-  let first = coordinates(points[0])
-  let last = coordinates(points[points.length() - 1])
+  let first = position_coordinates(points[0])
+  let last = position_coordinates(points[points.length() - 1])
   if quantized {
     let mut x = 0L
     let mut y = 0L
@@ -231,7 +321,7 @@ fn topology_geometry(
   check_position : (Json) -> Bool,
   depth : Int32,
 ) -> Bool {
-  if depth <= 0 || !geo_bbox(value) {
+  if depth <= 0 || !(value is Object(_)) {
     return false
   }
   if value is Object(fields) &&
@@ -265,12 +355,11 @@ fn topojson_cell(value : Json) -> Result[Cell, String] {
   guard value is Object(map) &&
     prop(value, "type") is String("Topology") &&
     prop(value, "arcs") is Array(arcs) &&
-    prop(value, "objects") is Object(objects) &&
-    geo_bbox(value) else {
+    prop(value, "objects") is Object(objects) else {
     return Err("Expected TopoJSON Topology with arcs and objects")
   }
-  let quantized = match map.get("transform") {
-    None => false
+  let transform = match map.get("transform") {
+    None => None
     Some(transform) => {
       for name in ["scale", "translate"] {
         guard prop(transform, name) is Array(pair) &&
@@ -279,9 +368,15 @@ fn topojson_cell(value : Json) -> Result[Cell, String] {
           return Err("Invalid TopoJSON transform")
         }
       }
-      true
+      Some(
+        (
+          position_coordinates(prop(transform, "scale")),
+          position_coordinates(prop(transform, "translate")),
+        ),
+      )
     }
   }
+  let quantized = transform is Some(_)
   fn check_position(value : Json) -> Bool {
     position(value) &&
     (
@@ -302,5 +397,116 @@ fn topojson_cell(value : Json) -> Result[Cell, String] {
       return Err("Invalid TopoJSON geometry, arc index or arc connectivity")
     }
   }
+  if !valid_topology_bboxes(value, arcs, transform) {
+    return Err("Invalid TopoJSON bounding box")
+  }
   Ok(StructuredValue(canonical_json(value).stringify()))
+}
+
+///|
+fn valid_topology_bboxes(
+  value : Json,
+  arcs : Array[Json],
+  transform : (Array[Double], Array[Double])?,
+) -> Bool {
+  fn inside(point : Array[Double], box : BoundingBox) -> Bool {
+    if transform is Some((scale, translate)) {
+      point[0] = point[0] * scale[0] + translate[0]
+      point[1] = point[1] * scale[1] + translate[1]
+    }
+    box.contains(point)
+  }
+  fn arc_inside(index : Int32, box : BoundingBox) -> Bool {
+    guard arcs[index] is Array(points) else { return false }
+    let mut x = 0L
+    let mut y = 0L
+    for item in points {
+      let point = position_coordinates(item)
+      if transform is Some(_) {
+        x += point[0].to_int64()
+        y += point[1].to_int64()
+        point[0] = x.to_double()
+        point[1] = y.to_double()
+      }
+      if !inside(point, box) {
+        return false
+      }
+    }
+    true
+  }
+  fn geometry_inside(
+    geometry : Json,
+    box : BoundingBox,
+    checked : Map[Int32, Bool],
+  ) -> Bool {
+    fn references_inside(refs : Json) -> Bool {
+      match refs {
+        Array(items) => items.all(references_inside)
+        Number(n, ..) => {
+          let encoded = n.to_int()
+          let index = if encoded < 0 { -(encoded + 1) } else { encoded }
+          if checked.contains(index) {
+            return true
+          }
+          if !arc_inside(index, box) {
+            return false
+          }
+          checked[index] = true
+          true
+        }
+        _ => false
+      }
+    }
+    match prop(geometry, "type") {
+      String("Point") =>
+        inside(position_coordinates(prop(geometry, "coordinates")), box)
+      String("MultiPoint") =>
+        json_items(prop(geometry, "coordinates"), 0, p => {
+          inside(position_coordinates(p), box)
+        })
+      String("GeometryCollection") =>
+        json_items(prop(geometry, "geometries"), 0, g => {
+          geometry_inside(g, box, checked)
+        })
+      _ => references_inside(prop(geometry, "arcs"))
+    }
+  }
+  fn check_geometry(geometry : Json) -> Bool {
+    guard geometry is Object(fields) else { return false }
+    if fields.get("bbox") is Some(raw) {
+      guard read_bbox(raw, false) is Some(box) &&
+        geometry_inside(geometry, box, Map([])) else {
+        return false
+      }
+    }
+    if prop(geometry, "type") is String("GeometryCollection") {
+      json_items(prop(geometry, "geometries"), 0, check_geometry)
+    } else {
+      true
+    }
+  }
+  guard value is Object(fields) && prop(value, "objects") is Object(objects) else {
+    return false
+  }
+  if fields.get("bbox") is Some(raw) {
+    guard read_bbox(raw, false) is Some(box) else { return false }
+    let checked = Map([])
+    for index in 0..<arcs.length() {
+      if !arc_inside(index, box) {
+        return false
+      }
+      checked[index] = true
+    }
+    for _, geometry in objects {
+      if !geometry_inside(geometry, box, checked) {
+        return false
+      }
+    }
+  }
+  for _, geometry in objects {
+    if !check_geometry(geometry) {
+      return false
+    }
+  }
+  true
 }

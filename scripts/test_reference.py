@@ -5,6 +5,7 @@ from pathlib import Path
 import csv, hashlib, json, shutil, subprocess, tempfile
 from xml.etree import ElementTree
 import frictionless
+from jsonschema import Draft4Validator
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = [
@@ -110,6 +111,10 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
         ('time', '%H:%M:%S.%f', '12:34:56.12', '12:34:56.1234567'),
         ('datetime', '%Y-%m-%dT%H:%M:%S.%f%z', '2024-03-01T00:01:02.003000+01:00',
          '2023-02-29T00:01:02.003000+01:00'),
+        ('date', '%d %b %Y', '29 Feb 2024', '29 Feb 2023'),
+        ('date', '%Y-%j', '2024-060', '2024-367'),
+        ('date', '%G-W%V-%u', '2020-W53-7', '2020-W54-7'),
+        ('time', '%I:%M %p', '7:05 PM', '13:05 PM'),
     ]:
         descriptor = {'fields': [{'name': 'when', 'type': dtype, 'format': format_name}]}
         time_schema.write_text(json.dumps(descriptor))
@@ -121,7 +126,91 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
             actual = subprocess.run(cli + ['validate-stream', str(time_schema), str(time_data)],
                                     capture_output=True, text=True)
             assert report.valid == expected and actual.returncode == int(not expected), (dtype, raw)
-    print('Custom %f formats: Frictionless and MoonFriction agree on valid and invalid times')
+    print('Custom time formats: Frictionless and MoonFriction agree on fractions, month names, ordinal dates, ISO week dates and 12-hour time')
+
+    geography = {
+        'type': 'MultiPoint',
+        'coordinates': [[177, -20], [-178, -16]],
+        'bbox': [177, -20, -178, -16],
+    }
+    descriptor = {'fields': [{'name': 'region', 'type': 'geojson'}]}
+    geo_data = work / 'geo.csv'
+    time_schema.write_text(json.dumps(descriptor))
+    schema = frictionless.Schema.from_descriptor(descriptor)
+    # RFC 7946 §5.2 Fiji antimeridian envelope. Frictionless validates
+    # the exchanged geometry, while MoonFriction also checks containment.
+    for point, expected in [([-178, -16], True), ([0, -16], False)]:
+        geography['coordinates'][1] = point
+        with geo_data.open('w', encoding='utf-8', newline='') as stream:
+            csv.writer(stream).writerows([['region'], [json.dumps(geography)]])
+        actual = subprocess.run(cli + ['validate-stream', str(time_schema), str(geo_data)],
+                                capture_output=True, text=True)
+        assert actual.returncode == int(not expected), actual.stdout
+        if expected:
+            assert frictionless.Resource(path=geo_data.name, basepath=str(work), schema=schema).validate().valid
+    print('GeoJSON: Fiji antimeridian fixture exchanges with Frictionless, outside point rejected locally')
+
+    profile_path = work / 'profiled.json'
+    profile_file = work / 'profiles.json'
+    package_profile = 'warehouse-profile'
+    resource_profile = 'https://example.org/retention-resource.json'
+    documents = {
+        package_profile: {'type': 'object', 'required': ['title']},
+        resource_profile: {
+            'type': 'object', 'required': ['retention'],
+            'properties': {'retention': {'type': 'integer', 'minimum': 1}},
+        },
+    }
+    for schema in documents.values():
+        Draft4Validator.check_schema(schema)
+    profile_file.write_text(json.dumps(documents))
+    profiled = {
+        'profile': package_profile, 'title': 'Warehouse',
+        'resources': [{'name': 'archive', 'profile': resource_profile, 'data': {'sku': 'P01'}}],
+    }
+    for retention in (30, 0):
+        resource, = profiled['resources']
+        resource['retention'] = retention
+        profile_path.write_text(json.dumps(profiled))
+        expected = (Draft4Validator(documents[package_profile]).is_valid(profiled) and
+                    Draft4Validator(documents[resource_profile]).is_valid(resource))
+        actual = subprocess.run(cli + ['inspect-package', str(profile_path), '--profile-schemas', str(profile_file)],
+                                capture_output=True, text=True)
+        assert actual.returncode == int(not expected), actual.stdout
+        if not expected:
+            error, = json.loads(actual.stdout)['errors']
+            assert (error['resource'], error['field']) == ('archive', 'profile/retention')
+    unsupported = subprocess.run(cli + ['inspect-package', str(profile_path)], capture_output=True, text=True)
+    assert unsupported.returncode == 1
+    assert {e['code'] for e in json.loads(unsupported.stdout)['errors']} == {'unsupported'}
+    resource['retention'] = 30
+    profile_path.write_text(json.dumps(profiled))
+    profiled_export = work / 'profiled-roundtrip'
+    subprocess.run(cli + ['export-package', str(profile_path), str(profiled_export), '--profile-schemas',
+                          str(profile_file)], check=True, capture_output=True)
+    copied_profiled = json.loads((profiled_export / 'datapackage.json').read_text())
+    assert copied_profiled == profiled
+    assert Draft4Validator(documents[package_profile]).is_valid(copied_profiled)
+    assert Draft4Validator(documents[resource_profile]).is_valid(copied_profiled['resources'][0])
+    # A profile can deliberately require an external schema locator. Evaluate
+    # the original descriptor, then resolve it for tabular validation.
+    table_schema = work / 'table-schema.json'
+    table_schema.write_text(json.dumps({'fields': [{'name': 'sku', 'type': 'string'}]}))
+    documents[resource_profile]['properties']['schema'] = {'type': 'string'}
+    documents[resource_profile]['required'].append('schema')
+    profile_file.write_text(json.dumps(documents))
+    resource['schema'] = table_schema.name
+    resource['data'] = [{'sku': 'P01'}]
+    profile_path.write_text(json.dumps(profiled))
+    profile_options = ['--profile-schemas', str(profile_file)]
+    tables = work / 'profiled-tables-roundtrip'
+    subprocess.run(cli + ['export', str(profile_path), str(tables)] + profile_options,
+                   check=True, capture_output=True)
+    roundtrip = tables / 'datapackage.json'
+    assert json.loads(roundtrip.read_text()) == profiled
+    assert (tables / table_schema.name).read_bytes() == table_schema.read_bytes()
+    subprocess.run(cli + ['validate', str(roundtrip)] + profile_options, check=True, capture_output=True)
+    print('Data Package profiles: package and resource constraints and export agree with Python jsonschema')
 
     if shutil.which('xmllint'):
         xml = work / 'value.xml'

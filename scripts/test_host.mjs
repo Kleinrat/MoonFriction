@@ -166,6 +166,9 @@ try{
        response.end(JSON.stringify({resources:[{name:'items',path:['first.csv','second.csv'],
          schema:'schema.json',dialect:'dialect.json',encoding:'iso-8859-1'}]}));
        break;
+     case '/profile.json':
+       response.end(JSON.stringify({type: 'object', required: ['title']}));
+       break;
      case '/schema.json':
        response.end(JSON.stringify({fields:[{name:'id',type:'integer'},{name:'title'}],primaryKey:'id'}));
        break;
@@ -213,6 +216,24 @@ try{
    await runAsync(process.execPath, ['scripts/cli.mjs','export',remotePackage,remoteCopy,'--allow-remote']);
    assert.equal(generic('validate', path.join(remoteCopy,'datapackage.json')).status, 0);
    assert.deepEqual(await readFile(path.join(remoteCopy,'first.csv')),Buffer.from('1;café\n','latin1'));
+
+   const profileManifest = path.join(temp, 'remote-profile.json');
+   const profiled = {profile: url + '/profile.json', title: 'Catalog',
+     resources: [{name: 'items', data: []}]};
+   await writeFile(profileManifest, JSON.stringify(profiled));
+   const requestsBeforeProfile = requests.length;
+   const disabled = generic('inspect-package', profileManifest);
+   assert.equal(disabled.status, 1);
+   assert.equal(JSON.parse(disabled.stdout).errors[0].code, 'unsupported');
+   assert.equal(requests.length, requestsBeforeProfile);
+   await runAsync(process.execPath, ['scripts/cli.mjs', 'inspect-package', profileManifest, '--allow-remote']);
+   assert.deepEqual(requests.slice(requestsBeforeProfile), ['/profile.json']);
+   delete profiled.title;
+   await writeFile(profileManifest, JSON.stringify(profiled));
+   await assert.rejects(
+     runAsync(process.execPath, ['scripts/cli.mjs', 'inspect-package', profileManifest, '--allow-remote']),
+     error => error.code === 1 && JSON.parse(error.stdout).errors[0].field === 'profile'
+   );
  } finally {
    await new Promise(resolve => server.close(resolve));
  }

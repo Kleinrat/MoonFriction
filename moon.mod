@@ -1,6 +1,6 @@
 name = "Kleinrat/frictionless"
 
-version = "0.9.0"
+version = "0.10.0"
 
 readme = "README.md"
 
@@ -16,4 +16,5 @@ preferred_target = "js"
 
 import {
   "moonbit-community/NyaCSV@0.3.4",
+  "moonbitstack/moonschema@0.2.0",
 }

@@ -6,3 +6,7 @@
 - Frictionless Framework 5.21.0 is used only as an optional independent test oracle. It is not a runtime dependency of the library or CLI.
 
 - The example CSV in examples/iana-tzdb is derived from the public-domain zone1970.tab in IANA tzdata2025b. It preserves the data records and changes the column order, header and delimited-file encoding. See the example README for upstream attribution, license, hashes and reproduction.
+
+- XML Schema regular expressions use data derived from Unicode Character Database 16.0.0. See [Unicode license](third_party/unicode/LICENSE) and [regeneration instructions](third_party/unicode/README.md).
+
+- Data Package license identifiers are sourced from the [Open Definition license registry](https://github.com/okfn/licenses/tree/086d0bfabce15ad0d587c7e0449c695dc0f66fcf/licenses). The project retains the identifiers only.

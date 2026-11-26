@@ -20,7 +20,7 @@ pub(all) struct TableSchema {
 pub fn parse_table_schema(
   text : String,
 ) -> Result[TableSchema, Array[Diagnostic]] {
-  let original = @json.parse(text) catch {
+  let original = @json.parse(text, preserve_number_repr=true) catch {
     _ => return Err([issue("json", "", 0, "", "Invalid JSON table schema")])
   }
   if !(original is Object(_)) {
@@ -202,18 +202,46 @@ fn parse_schema_value(
     reject_nulls(
       entry,
       [
-        "name", "type", "format", "constraints", "bareNumber", "decimalChar", "groupChar",
-        "trueValues", "falseValues",
+        "name", "type", "format", "constraints", "bareNumber", "decimalChar", "trueValues",
+        "falseValues",
       ],
       resource,
       fname,
       errors,
     )
+    if entry is Object(properties) {
+      for key in ["title", "description"] {
+        if properties.get(key) is Some(value) && !(value is String(_)) {
+          errors.push(
+            issue("descriptor", resource, 0, fname, key + " must be a string"),
+          )
+        }
+      }
+      if properties.get("rdfType") is Some(value) &&
+        !(value is String(uri) && text_format_matches(uri, "uri")) {
+        errors.push(
+          issue(
+            "descriptor", resource, 0, fname, "rdfType must be an absolute URI",
+          ),
+        )
+      }
+    }
     let kind = match prop(entry, "type") {
       Null | String("string") => Text
       String("integer") => Integer
       String("number") => Number
       String("boolean") => Boolean
+      String("object") => ObjectValueType
+      String("array") => ArrayValueType
+      String("any") => Any
+      String("date") => Date
+      String("time") => Time
+      String("datetime") => DateTime
+      String("year") => Year
+      String("yearmonth") => YearMonth
+      String("duration") => Duration
+      String("geopoint") => GeoPoint
+      String("geojson") => GeoJson
       _ => {
         errors.push(
           issue("unsupported", resource, 0, fname, "Unsupported field type"),
@@ -228,35 +256,22 @@ fn parse_schema_value(
         ),
       )
     }
-    for
-      key in [
-        "bareNumber", "decimalChar", "groupChar", "trueValues", "falseValues",
-      ] {
-      if prop(entry, key) != Json::null() {
-        errors.push(
-          issue(
-            "unsupported",
-            resource,
-            0,
-            fname,
-            "Field feature not yet supported: " + key,
-          ),
-        )
-      }
-    }
-    if prop(entry, "format") != Json::null() &&
-      prop(entry, "format") != Json::string("default") {
+    let declared_format = prop(entry, "format")
+    let format = json_text(declared_format).unwrap_or("default")
+    if (!(declared_format is Null) && !(declared_format is String(_))) ||
+      !supported_field_format(kind, format) {
       errors.push(
-        issue(
-          "unsupported", resource, 0, fname, "Only default field formats are supported",
-        ),
+        issue("unsupported", resource, 0, fname, "Unsupported field format"),
       )
     }
+    let boolean_tokens = boolean_tokens(entry, kind, resource, fname, errors)
+    let numeric_format = numeric_format(entry, kind, resource, fname, errors)
     let constraints = prop(entry, "constraints")
     reject_nulls(
       constraints,
       [
         "required", "unique", "enum", "minimum", "maximum", "minLength", "maxLength",
+        "pattern",
       ],
       resource,
       fname,
@@ -271,6 +286,7 @@ fn parse_schema_value(
       for key, _ in values {
         if ![
             "required", "unique", "enum", "minimum", "maximum", "minLength", "maxLength",
+            "pattern",
           ].contains(key) {
           errors.push(
             issue(
@@ -284,8 +300,42 @@ fn parse_schema_value(
         }
       }
     }
-    let minimum = bound(constraints, "minimum", resource, fname, errors)
-    let maximum = bound(constraints, "maximum", resource, fname, errors)
+    let temporal = temporal_kind(kind)
+    let integer = kind == Integer
+    let exact_minimum = if integer {
+      integer_bound(constraints, "minimum", resource, fname, errors)
+    } else {
+      None
+    }
+    let exact_maximum = if integer {
+      integer_bound(constraints, "maximum", resource, fname, errors)
+    } else {
+      None
+    }
+    let minimum = if temporal || numeric_kind(kind) {
+      None
+    } else {
+      bound(constraints, "minimum", resource, fname, errors)
+    }
+    let maximum = if temporal || numeric_kind(kind) {
+      None
+    } else {
+      bound(constraints, "maximum", resource, fname, errors)
+    }
+    let temporal_minimum = if temporal {
+      temporal_bound(
+        constraints, "minimum", kind, format, resource, fname, errors,
+      )
+    } else {
+      None
+    }
+    let temporal_maximum = if temporal {
+      temporal_bound(
+        constraints, "maximum", kind, format, resource, fname, errors,
+      )
+    } else {
+      None
+    }
     let min_length = length_bound(
       constraints, "minLength", resource, fname, errors,
     )
@@ -293,6 +343,12 @@ fn parse_schema_value(
       constraints, "maxLength", resource, fname, errors,
     )
     if (minimum is Some(lo) && maximum is Some(hi) && lo > hi) ||
+      (exact_minimum is Some(lo) && exact_maximum is Some(hi) && lo > hi) ||
+      (
+        temporal_minimum is Some(lo) &&
+        temporal_maximum is Some(hi) &&
+        compare_temporal(kind_label(kind), lo, hi) > 0
+      ) ||
       (min_length is Some(lo) && max_length is Some(hi) && lo > hi) {
       errors.push(
         issue(
@@ -300,33 +356,78 @@ fn parse_schema_value(
         ),
       )
     }
-    if (
-        (kind == Text || kind == Boolean) &&
-        (minimum != None || maximum != None)
-      ) ||
-      (kind != Text && (min_length != None || max_length != None)) {
+    if (!numeric_kind(kind) && (minimum != None || maximum != None)) ||
+      (!collection_kind(kind) && (min_length != None || max_length != None)) {
       errors.push(
         issue(
           "descriptor", resource, 0, fname, "Constraint is not applicable to field type",
         ),
       )
     }
-    fields.push({
+    let pattern = match prop(constraints, "pattern") {
+      Null => None
+      String(raw) if kind == Text =>
+        match compile_field_pattern(raw) {
+          Ok(value) => Some(value)
+          Err(message) => {
+            errors.push(issue("descriptor", resource, 0, fname, message))
+            None
+          }
+        }
+      _ => {
+        errors.push(
+          issue(
+            "descriptor", resource, 0, fname, "pattern requires a string field and a regex string",
+          ),
+        )
+        None
+      }
+    }
+    let f = {
       name: fname,
       kind,
+      format,
+      boolean_tokens,
+      numeric_format,
       required: flag(constraints, "required", resource, fname, errors),
       unique: flag(constraints, "unique", resource, fname, errors),
-      enum_values: parse_enum(
-        prop(constraints, "enum"),
-        kind,
-        resource,
-        fname,
-        errors,
-      ),
+      enum_values: None,
       minimum,
       maximum,
       min_length,
       max_length,
+      pattern,
+      decimal_minimum: None,
+      decimal_maximum: None,
+      exact_minimum,
+      exact_maximum,
+      temporal_minimum,
+      temporal_maximum,
+    }
+    let decimal_minimum = if kind == Number {
+      decimal_bound(constraints, "minimum", f, resource, errors)
+    } else {
+      None
+    }
+    let decimal_maximum = if kind == Number {
+      decimal_bound(constraints, "maximum", f, resource, errors)
+    } else {
+      None
+    }
+    if decimal_minimum is Some(lo) &&
+      decimal_maximum is Some(hi) &&
+      compare_decimal(lo, hi) > 0 {
+      errors.push(
+        issue(
+          "descriptor", resource, 0, fname, "Contradictory constraint bounds",
+        ),
+      )
+    }
+    fields.push({
+      ..f,
+      decimal_minimum,
+      decimal_maximum,
+      enum_values: parse_enum(prop(constraints, "enum"), f, resource, errors),
     })
   }
   if fields.is_empty() {

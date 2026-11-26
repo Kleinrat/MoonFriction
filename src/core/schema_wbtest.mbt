@@ -99,7 +99,7 @@ test "enum compares typed values across CSV and JSON preserving Int64" {
 
 ///|
 test "enumerations reject malformed schema definitions" {
-  for bad in ["null", "[]", "1", "[null]", "[true]", "[1.5]", "[\"1\"]"] {
+  for bad in ["null", "[]", "1", "[null]", "[true]", "[1.5]", "[\"oops\"]"] {
     let text = "{\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"constraints\":{\"enum\":" +
       bad +
       "}}]}"

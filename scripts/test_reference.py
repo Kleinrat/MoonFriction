@@ -3,6 +3,7 @@ Run after building: python scripts/test_reference.py (in a dedicated reference v
 """
 from pathlib import Path
 import csv, hashlib, json, shutil, subprocess, tempfile
+from xml.etree import ElementTree
 import frictionless
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +42,123 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
             assert actual.returncode == int(not valid)
             assert [e['row'] for e in json.loads(actual.stdout)['errors']] == ([] if valid else [3])
     print('composite-key order: both validators agree for distinct and duplicate tuples')
+
+    exchange = work / 'standard-exchange'
+    shutil.copytree(ROOT / 'examples/standard-exchange', exchange)
+    manifest = exchange / 'datapackage.json'
+    cli = ['node', str(ROOT / 'scripts/cli.mjs')]
+    assert frictionless.Package(str(manifest)).validate().valid
+    assert subprocess.run(cli + ['validate', str(manifest)], capture_output=True).returncode == 0
+    csv_file = exchange / 'shipments.csv'
+    original = csv_file.read_bytes()
+    for before, after, code, field in [
+        (b'2024-02-29', b'2024-02-28', 'minimum', 'shipped_on'),
+        (b'2024-02-29', b'2023-02-29', 'type', 'shipped_on'),
+        (b',P10,', b',P99,', 'foreign-key', 'sku'),
+        (b',2,yes,', b',0,yes,', 'minimum', 'quantity'),
+        (b',2,yes,', b',2,maybe,', 'type', 'packed'),
+    ]:
+        csv_file.write_bytes(original.replace(before, after, 1))
+        reference = frictionless.Package(str(manifest)).validate()
+        actual = subprocess.run(cli + ['validate', str(manifest)], capture_output=True, text=True)
+        assert not reference.valid and actual.returncode == 1, (field, reference.to_descriptor())
+        error, = json.loads(actual.stdout)['errors']
+        assert (error['code'], error['resource'], error['row'], error['field']) == (code, 'shipments', 1, field)
+    csv_file.write_bytes(original)
+    tabular_export = work / 'tabular-roundtrip'
+    subprocess.run(cli + ['export', str(manifest), str(tabular_export)], check=True, capture_output=True)
+    assert frictionless.Package(str(tabular_export / 'datapackage.json')).validate().valid
+    assert (tabular_export / 'shipments.csv').read_bytes() == original
+    print('Table Schema v1: typed CSV, invalid date, bounds, boolean, foreign key and export/read-back PASS')
+
+    mixed_export = work / 'mixed-roundtrip'
+    mixed_path = exchange / 'mixed.json'
+    checked = subprocess.run(cli + ['export-package', str(mixed_path), str(mixed_export)],
+                             check=True, capture_output=True, text=True)
+    mixed = json.loads(checked.stdout)
+    assert [item['location'] for item in mixed['resources']] == ['local', 'inline', 'remote']
+    copied = mixed_export / 'datapackage.json'
+    assert json.loads(copied.read_text()) == json.loads(mixed_path.read_text())
+    for part in ('products.csv', 'products-annex.csv'):
+        assert (mixed_export / part).read_bytes() == (exchange / part).read_bytes()
+    reference_pkg = frictionless.Package(str(copied))
+    assert reference_pkg.get_resource('metadata').data['warehouse'] == 'main'
+    assert reference_pkg.get_resource('tracking').path == 'https://example.org/tracking.csv'
+    assert reference_pkg.get_resource('files').path == 'products.csv'
+    print('Data Package v1: multipart local files and preserved inline/remote descriptors PASS')
+
+    multipart = exchange / 'multipart.json'
+    multipart_reference = frictionless.Package(str(multipart))
+    assert multipart_reference.validate().valid
+    assert [len(r.read_rows()) for r in multipart_reference.resources] == [3, 2]
+    assert multipart_reference.get_resource('shipments').read_rows()[0]['id'] == 9007199254740993
+    multipart_export = work / 'multipart-roundtrip'
+    subprocess.run(cli + ['export', str(multipart), str(multipart_export)], check=True, capture_output=True)
+    assert frictionless.Package(str(multipart_export / 'datapackage.json')).validate().valid
+    broken = multipart_export / 'products-annex.csv'
+    broken.write_text('sku,name\nP10,Duplicate\n')
+    duplicate = subprocess.run(cli + ['validate', str(multipart_export / 'datapackage.json')],
+                               capture_output=True, text=True)
+    assert duplicate.returncode == 1
+    assert any(e['code'] == 'primary-key-duplicate' and e['row'] == 3 for e in json.loads(duplicate.stdout)['errors'])
+    assert not frictionless.Package(str(multipart_export / 'datapackage.json')).validate().valid
+    print('Mixed Table Schema: inline JSON keys resolve against the second CSV part and round-trip PASS')
+
+    time_schema = work / 'fraction.schema.json'
+    time_data = work / 'fraction.csv'
+    for dtype, format_name, valid, invalid in [
+        ('time', '%H:%M:%S.%f', '12:34:56.12', '12:34:56.1234567'),
+        ('datetime', '%Y-%m-%dT%H:%M:%S.%f%z', '2024-03-01T00:01:02.003000+01:00',
+         '2023-02-29T00:01:02.003000+01:00'),
+    ]:
+        descriptor = {'fields': [{'name': 'when', 'type': dtype, 'format': format_name}]}
+        time_schema.write_text(json.dumps(descriptor))
+        schema = frictionless.Schema.from_descriptor(descriptor)
+        for raw, expected in [(valid, True), (invalid, False)]:
+            with time_data.open('w', encoding='utf-8', newline='') as stream:
+                csv.writer(stream).writerows([['when'], [raw]])
+            report = frictionless.Resource(path=time_data.name, basepath=str(work), schema=schema).validate()
+            actual = subprocess.run(cli + ['validate-stream', str(time_schema), str(time_data)],
+                                    capture_output=True, text=True)
+            assert report.valid == expected and actual.returncode == int(not expected), (dtype, raw)
+    print('Custom %f formats: Frictionless and MoonFriction agree on valid and invalid times')
+
+    if shutil.which('xmllint'):
+        xml = work / 'value.xml'
+        xsd = work / 'value.xsd'
+        schema_path = work / 'pattern.schema.json'
+        data_path = work / 'pattern.csv'
+        namespace = '{http://www.w3.org/2001/XMLSchema}'
+        for pattern, valid, invalid in [
+            ('[a-z-[aeiou]]+', 'sky', 'skyline'),
+            (r'\p{IsGreek}+', 'Ωβ', 'ΩA'),
+            (r'\p{L}\d+', 'Ω٣', 'ΩX'),
+            (r'[\p{Lu}-[A-Z]]+', 'Ω', 'A'),
+            ('[A-Z]+', 'ABC', 'aBC'),
+        ]:
+            schema = ElementTree.Element(namespace + 'schema')
+            field = ElementTree.SubElement(schema, namespace + 'element', name='value')
+            simple = ElementTree.SubElement(field, namespace + 'simpleType')
+            restricted = ElementTree.SubElement(simple, namespace + 'restriction', {'base': 'xs:string', 'xmlns:xs': 'http://www.w3.org/2001/XMLSchema'})
+            ElementTree.SubElement(restricted, namespace + 'pattern', value=pattern)
+            ElementTree.ElementTree(schema).write(xsd, encoding='utf-8')
+            schema_path.write_text(json.dumps({'fields': [{'name': 'value', 'constraints': {'pattern': pattern}}]}))
+            for value, expected in [(valid, True), (invalid, False)]:
+                element = ElementTree.Element('value')
+                element.text = value
+                ElementTree.ElementTree(element).write(xml, encoding='utf-8')
+                external = subprocess.run(['xmllint', '--noout', '--schema', str(xsd), str(xml)],
+                                          capture_output=True)
+                assert (external.returncode == 0) == expected, (pattern, value, external.stderr)
+                with data_path.open('w', encoding='utf-8', newline='') as stream:
+                    csv.writer(stream).writerows([['value'], [value]])
+                actual = subprocess.run(cli + ['validate-stream', str(schema_path), str(data_path)],
+                                        capture_output=True, text=True)
+                assert actual.returncode == int(not expected), (pattern, value, actual.stdout, actual.stderr)
+                if not expected:
+                    error, = json.loads(actual.stdout)['errors']
+                    assert (error['code'], error['field'], error['row']) == ('pattern', 'value', 1)
+        print('XML Schema regular expressions: five positive/negative pairs agree with xmllint')
 
     tz = ROOT / 'examples/iana-tzdb'
     data = tz / 'zones.csv'

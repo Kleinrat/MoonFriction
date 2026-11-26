@@ -40,6 +40,30 @@ fn check_field_definitions(
         ),
       )
     }
+    if !supported_field_format(f.kind, f.format) {
+      errors.push(issue("schema", name, 0, f.name, "Unsupported field format"))
+    }
+    if f.boolean_tokens is Some(t) &&
+      (
+        f.kind != Boolean ||
+        t.truthy.is_empty() ||
+        t.falsy.is_empty() ||
+        t.truthy.any(v => t.falsy.contains(v))
+      ) {
+      errors.push(
+        issue("schema", name, 0, f.name, "Invalid boolean token definitions"),
+      )
+    }
+    if f.numeric_format is Some(n) &&
+      (
+        !numeric_kind(f.kind) ||
+        !valid_numeric_separator(n.decimal) ||
+        (n.group is Some(g) && (!valid_numeric_separator(g) || g == n.decimal))
+      ) {
+      errors.push(
+        issue("schema", name, 0, f.name, "Invalid numeric format definitions"),
+      )
+    }
     names.push(f.name)
     if f.enum_values is Some(values) &&
       (values.is_empty() || !values.all(v => enum_member_matches(v, f.kind))) {
@@ -64,11 +88,12 @@ fn check_field_definitions(
         issue("schema", name, 0, f.name, "minLength exceeds maxLength"),
       )
     }
-    if (
-        (f.kind == Text || f.kind == Boolean) &&
-        (f.minimum != None || f.maximum != None)
+    if (!numeric_kind(f.kind) && (f.minimum != None || f.maximum != None)) ||
+      (
+        !collection_kind(f.kind) &&
+        (f.min_length != None || f.max_length != None)
       ) ||
-      (f.kind != Text && (f.min_length != None || f.max_length != None)) {
+      (f.kind != Text && f.pattern is Some(_)) {
       errors.push(
         issue(
           "schema",
@@ -81,6 +106,50 @@ fn check_field_definitions(
     }
     if f.minimum is Some(lo) && f.maximum is Some(hi) && lo > hi {
       errors.push(issue("schema", name, 0, f.name, "minimum exceeds maximum"))
+    }
+    if (
+        f.kind != Integer &&
+        (f.exact_minimum is Some(_) || f.exact_maximum is Some(_))
+      ) ||
+      (f.exact_minimum is Some(lo) && f.exact_maximum is Some(hi) && lo > hi) {
+      errors.push(
+        issue("schema", name, 0, f.name, "Invalid exact integer bounds"),
+      )
+    }
+    if (
+        f.kind != Number &&
+        (f.decimal_minimum is Some(_) || f.decimal_maximum is Some(_))
+      ) ||
+      (
+        f.decimal_minimum is Some(lo) &&
+        f.decimal_maximum is Some(hi) &&
+        compare_decimal(lo, hi) > 0
+      ) {
+      errors.push(
+        issue("schema", name, 0, f.name, "Invalid exact decimal bounds"),
+      )
+    }
+    if f.temporal_minimum is Some(lo) &&
+      f.temporal_maximum is Some(hi) &&
+      compare_temporal(kind_label(f.kind), lo, hi) > 0 {
+      errors.push(issue("schema", name, 0, f.name, "minimum exceeds maximum"))
+    }
+    for temporal_bound in [f.temporal_minimum, f.temporal_maximum] {
+      if temporal_bound is Some(raw) &&
+        (
+          !temporal_kind(f.kind) ||
+          normalize_temporal(kind_label(f.kind), raw) != Ok(raw)
+        ) {
+        errors.push(
+          issue(
+            "schema",
+            name,
+            0,
+            f.name,
+            "Temporal bounds must be canonical values of the field type",
+          ),
+        )
+      }
     }
     if (f.min_length is Some(n) && n < 0) || (f.max_length is Some(n) && n < 0) {
       errors.push(
@@ -116,6 +185,67 @@ fn check_logical_cell(
         issue("unique", name, number, f.name, "Duplicate logical value"),
       )
     }
+    if (f.exact_minimum is Some(_) || f.exact_maximum is Some(_)) &&
+      logical_integer(cell) is Some(value) {
+      if f.exact_minimum is Some(lo) && value < lo {
+        errors.push(
+          issue("minimum", name, number, f.name, "Value is below minimum"),
+        )
+      }
+      if f.exact_maximum is Some(hi) && value > hi {
+        errors.push(
+          issue("maximum", name, number, f.name, "Value is above maximum"),
+        )
+      }
+    }
+    if f.kind == Number {
+      let minimum = if f.decimal_minimum is Some(_) {
+        f.decimal_minimum
+      } else {
+        f.minimum.map(decimal_from_double)
+      }
+      let maximum = if f.decimal_maximum is Some(_) {
+        f.decimal_maximum
+      } else {
+        f.maximum.map(decimal_from_double)
+      }
+      if minimum is Some(_) || maximum is Some(_) {
+        let value = logical_decimal(cell)
+        if minimum is Some(lo) &&
+          (
+            cell == SpecialNumber("-INF") ||
+            cell == SpecialNumber("NaN") ||
+            (value is Some(x) && compare_decimal(x, lo) < 0)
+          ) {
+          errors.push(
+            issue(
+              "minimum",
+              name,
+              number,
+              f.name,
+              "Value is below or incomparable to minimum",
+            ),
+          )
+        }
+        if maximum is Some(hi) &&
+          (
+            cell == SpecialNumber("INF") ||
+            cell == SpecialNumber("NaN") ||
+            (value is Some(x) && compare_decimal(x, hi) > 0)
+          ) {
+          errors.push(
+            issue(
+              "maximum",
+              name,
+              number,
+              f.name,
+              "Value is above or incomparable to maximum",
+            ),
+          )
+        }
+      }
+    }
+
     if cell is IntegerValue(n) &&
       (f.minimum != None || f.maximum != None) &&
       (n > 9007199254740991L || n < -9007199254740991L) {
@@ -129,7 +259,18 @@ fn check_logical_cell(
         ),
       )
     }
-    if cell_number(cell) is Some(value) {
+    if cell is BigIntegerValue(_) && (f.minimum != None || f.maximum != None) {
+      errors.push(
+        issue(
+          "unsupported-range",
+          name,
+          number,
+          f.name,
+          "Use exact_minimum or exact_maximum for integer bounds",
+        ),
+      )
+    }
+    if f.kind == Integer && cell_number(cell) is Some(value) {
       if f.minimum is Some(lo) && value < lo {
         errors.push(
           issue("minimum", name, number, f.name, "Value is below minimum"),
@@ -141,8 +282,28 @@ fn check_logical_cell(
         )
       }
     }
-    if cell is TextValue(text) {
-      let length = text.iter().count()
+    if cell is TemporalValue(value) {
+      let kind = kind_label(f.kind)
+      if f.temporal_minimum is Some(lo) && compare_temporal(kind, value, lo) < 0 {
+        errors.push(
+          issue("minimum", name, number, f.name, "Value is below minimum"),
+        )
+      }
+      if f.temporal_maximum is Some(hi) && compare_temporal(kind, value, hi) > 0 {
+        errors.push(
+          issue("maximum", name, number, f.name, "Value is above maximum"),
+        )
+      }
+    }
+    if cell is TextValue(text) &&
+      f.pattern is Some(pattern) &&
+      pattern.matcher.execute(text[:]) is None {
+      errors.push(
+        issue("pattern", name, number, f.name, "Value does not match pattern"),
+      )
+    }
+    if (f.min_length is Some(_) || f.max_length is Some(_)) &&
+      cell_length(cell) is Some(length) {
       if f.min_length is Some(n) && length < n {
         errors.push(
           issue(
@@ -150,7 +311,7 @@ fn check_logical_cell(
             name,
             number,
             f.name,
-            "Text is shorter than minLength",
+            "Value has fewer items than minLength",
           ),
         )
       }
@@ -161,7 +322,7 @@ fn check_logical_cell(
             name,
             number,
             f.name,
-            "Text is longer than maxLength",
+            "Value has more items than maxLength",
           ),
         )
       }
@@ -200,7 +361,7 @@ pub fn validate_table(
       continue
     }
     for column, f in fields {
-      let cell = match cast_cell(row[column], f.kind, missing_values) {
+      let cell = match cast_field_text(row[column], f, missing_values) {
         Ok(value) => value
         Err(message) => {
           errors.push(issue("type", name, number, f.name, message))

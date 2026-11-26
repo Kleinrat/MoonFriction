@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.9.0 — 2026-11-26
+
+- 混合包校验支持多分片 CSV、内嵌 JSON 及显式启用的 HTTP(S) 资源、描述符和外部规则。
+- XML Schema 正则新增字符类减法、Unicode 16 属性和 XML 名称类。日期时间新增小数秒，TopoJSON 新增端点衔接和环闭合校验。
+- 新增通用 Data Package 描述符、资源和 schema 读取 API，以及 `inspect-package`、`export-package` 命令。
+- 扩展 Table Schema 的日期时间、集合、时长和地理类型，支持精确数值、字段格式和更多约束。
+- 新增标准数据交换案例及规范覆盖记录。 新增 Cell 变体和 Field 元素。使用完整结构体字面量或穷举匹配的调用方请按新 API 更新，例如通过 `field()` 创建默认字段。
+
 ## 0.8.1 — 2026-11-20
 
 - 为 `schema diff` 提供五个可运行示例，说明退出码、stdout/stderr、枚举增删成员和错误报告。CI 使用同一组样例检查命令行输出。

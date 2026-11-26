@@ -2,18 +2,18 @@
 
 第一次接触？先看[中文入门](docs/zh/getting-started.md)和[四种错误演示](docs/zh/errors-demo.md)。
 
-**MoonBit 原生的 Frictionless Data Package v1 / Table Schema v1 子集实现。**
+**使用 MoonBit 校验和交换 Frictionless 数据包及表格规则。**
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.8.1 提供可复现的 Table Schema 比较命令输出示例，支持大 CSV 文件流式校验，提供单表逐行校验接口，支持枚举约束、CSV 分隔符与引号配置，并为命令行增加 JSON 中文解释和本地规则文件共享。安装入口：[Kleinrat/frictionless@0.8.1](https://mooncakes.io/docs/Kleinrat/frictionless@0.8.1)。支持范围是明确子集，不宣称完整标准兼容。
+0.9.0 增加混合数据包校验、精确数值和更多日期、地理及 XML Schema 正则能力。发布版的规范覆盖情况与后续符合性目标见[兼容性记录](docs/COMPATIBILITY.md)。[Mooncakes 安装入口](https://mooncakes.io/docs/Kleinrat/frictionless@0.9.0)
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
 ## 能做什么
 
 - 读取带内嵌 schema 的本地 UTF-8 CSV 数据包，保留原始描述信息。
-- 转换 string、integer、number、boolean，区分缺失值、转换错误与约束错误。
+- 转换文本、精确数值、布尔、日期时间、数组和对象和地理数据，区分缺失值、类型错误与约束错误。
 - 检查 required、unique、minimum、maximum、minLength、maxLength。
 - 检查单字段 / 组合主键、跨表与自引用外键。
 - 输出资源名、逻辑记录号、字段名和错误代码。
@@ -24,6 +24,10 @@
 三个合成示例：商品与订单、学生与成绩、传感器与读数。它们用于验证数据交换能力，不代表真实用户采用。
 
 公开数据接入示例使用 IANA tzdb 2025b 的 312 条时区记录，比较两版规则并定位受影响的 34 条记录。[可复现步骤与结果](examples/iana-tzdb/README.md)
+
+## 按标准交换数据
+
+[仓库发货示例](examples/standard-exchange/README.md)演示 Table Schema 的日期、数值、布尔和键规则，并用 Frictionless Framework 独立验证导出结果。该示例还提供通用 Data Package，包含本地文件分片、内嵌 JSON 和 HTTP(S) 引用。`validate` 可把前两种资源放在同一数据包校验跨表外键。要读取可信 HTTP(S) 资源或远程描述符，可在命令后加上 `--allow-remote`。`inspect-package` 和 `export-package` 提供通用包描述符检查及导出。
 
 ## 独立业务接入示例
 
@@ -81,7 +85,7 @@ node scripts/cli.mjs validate-stream examples/schema-diff/new.json examples/sche
 
 比较命令返回字段、规则、旧值、新值及影响。此例返回 `status / enum / tightened`，移除成员为 draft。随后两条校验命令分别通过和报告第 1 条订单的枚举错误。交换规则顺序会得到 relaxed。
 
-MoonBit 接口为 `diff_table_schemas(old, current)`，输入由 `parse_table_schema` 解析。按字段名比较 required、unique、enum、数值及长度上下限；枚举同时增删时分别报告两个方向及对应成员。字段增删、顺序或类型改变、主外键及缺失标记变化标记为 review。类型变化时，原有的 `type` 记录后紧跟同字段的 `fieldConstraints` 记录。`before` 和 `after` 列出两侧生效的全部字段约束，含默认值。例如从必填整数改为可选数值，能直接看到 `required` 从 `true` 变为 `false`。复合主键仅重排时输出 `primaryKeyOrder`，其 `impact` 为 `orderOnly`：同一批行的唯一性判定相同，按位置使用键元组的调用方仍可看到前后顺序。主键成员增删或替换继续输出 `primaryKey / review`。结果仅说明各条规则的潜在影响，元数据不参加比较。integer 的 minimum/maximum 任一侧超出 ±9007199254740991 时返回 review，对该侧输出 `{"precision":"outside-safe-integer-range"}`。此时请核对原始规则中的数字；即使两个输入相同也可能需要复核。比较成功（含发现差异）退出 0，规则无效退出 1，参数或文件错误退出 2。
+MoonBit 接口为 `diff_table_schemas(old, current)`，输入由 `parse_table_schema` 解析。按字段名比较 required、unique、enum、数值及长度上下限；枚举同时增删时分别报告两个方向及对应成员。字段增删、顺序或类型改变、主外键及缺失标记变化标记为 review。类型变化时，原有的 `type` 记录后紧跟同字段的 `fieldConstraints` 记录。`before` 和 `after` 列出两侧生效的全部字段约束，含默认值。例如从必填整数改为可选数值，能直接看到 `required` 从 `true` 变为 `false`。复合主键仅重排时输出 `primaryKeyOrder`，其 `impact` 为 `orderOnly`：同一批行的唯一性判定相同，按位置使用键元组的调用方仍可看到前后顺序。主键成员增删或替换继续输出 `primaryKey / review`。结果仅说明各条规则的潜在影响，元数据不参加比较。从描述符解析的整数和小数界限按精确值比较。直接构造 `Field` 时传入超出安全整数范围的 Double 界限仍会标记为 review。比较成功（含发现差异）退出 0，规则无效退出 1，参数或文件错误退出 2。
 
 脚本集成可按退出码选择输出流，再读取枚举的增删成员。[CLI 输出约定与五个可运行示例](examples/schema-diff/README.md)
 
@@ -108,7 +112,7 @@ node scripts/cli.mjs validate-stream examples/shop/products.schema.json examples
 
 ## 限定状态等字段的取值
 
-例如，在字段定义中写入 `{"name":"status","type":"string","constraints":{"enum":["draft","paid"]}}`。订单状态为 `paid` 时通过，为 `void` 时报告 `enum` 及记录号和字段名。CSV 和 JSON 共用这项检查。支持字符串、整数、有限数值和布尔值；允许列表须非空，成员使用字段对应的 JSON 类型。缺失值仍由 `required` 决定。
+例如，在字段定义中写入 `{"name":"status","type":"string","constraints":{"enum":["draft","paid"]}}`。订单状态为 `paid` 时通过，为 `void` 时报告 `enum` 及记录号和字段名。CSV 和 JSON 共用这项检查。允许列表须非空，成员按该字段声明的类型和格式转换后再比较。缺失值仍由 `required` 决定。
 
 ## 读取分号 CSV 和 Tab 分隔文件（仓库源码）
 
@@ -154,7 +158,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.8.1
+moon add Kleinrat/frictionless@0.9.0
 ```
 
 在调用包的 `moon.pkg` 中加入：
@@ -183,7 +187,8 @@ API 主入口：
 
 | 函数 | 用途 |
 |---|---|
-| `parse_descriptor` | 读取标准描述文件，验证当前支持范围 |
+| `parse_data_package` / `DataResource::read` | 读取通用包描述符并通过宿主解析资源 |
+| `parse_descriptor` | 读取用于表格校验的数据包描述符 |
 | `parse_table_schema` / `validate_table_schema` | 不建数据包，直接解析并校验单表的 Table Schema |
 | `input_from_csv` | 将默认 CSV 方言转换成表输入 |
 | `input_from_json` / `validate_json_table` | 批量 JSON 行输入与类型化校验 |
@@ -221,11 +226,11 @@ CI 运行 MoonBit 单元测试、中文诊断映射检查、教程命令和独�
 
 ## 兼容性与边界
 
-详见 [支持范围](docs/COMPATIBILITY.md)。当前不支持远程资源、远程 schema、压缩包、上述范围以外的 CSV 方言选项、日期类型、正则约束等；遇到这些要求会报错，不假称已完成校验。
+开发目标为完整实现 **Table Schema v1** 与 **Data Package v1**。当前源码的已验证行为和待补规范条目见[兼容范围与验证状态](docs/COMPATIBILITY.md)。
 
 缺失值按物理字符串精确匹配后再转换。省略 missingValues 时采用 `[""]`；显式空数组保留空字符串。空 CSV 记录不被跳过，BOM 在 CLI 与库接口中一致处理。记录号是逻辑数据记录号，不是包含表头的物理文件行号。
 
-integer 使用有符号64位整数；number 使用有限 binary64。对超出精确 binary64 范围的整数应用数值边界时，报 unsupported-range，避免错误通过。导出保留数据，不自动清洗或修复。
+从文本及 JSON 数字字面量读取的整数和小数可保留精度。超出普通整数或浮点表示时，逻辑值使用 `BigIntegerValue` 或 `ExactNumberValue`。导出保留原始数据。
 
 本地 CLI 在内存中加载资源，每个源文件限制16 MiB；不作为多用户不可信上传服务使用。
 

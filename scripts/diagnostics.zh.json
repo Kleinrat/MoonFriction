@@ -1,4 +1,8 @@
 {
+  "pattern": {
+    "title": "字段格式与正则约束不符",
+    "fix": "检查该列的值是否满足 constraints.pattern。保持规则和数据的大小写一致。"
+  },
   "enum": {
     "title": "取值不在允许范围内",
     "fix": "对照该字段 constraints.enum 中列出的值，检查拼写、大小写和类型。"

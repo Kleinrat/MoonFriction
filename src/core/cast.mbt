@@ -67,7 +67,7 @@ fn decimal_syntax(text : String) -> Bool {
 }
 
 ///|
-/// Explicit bounded subset: finite numbers and signed 64-bit integers.
+/// Convert text using the default format for the declared field type.
 /// Missing markers are matched exactly, before casting; whitespace is preserved.
 pub fn cast_cell(
   raw : String,
@@ -78,29 +78,27 @@ pub fn cast_cell(
     return Ok(Missing)
   }
   match kind {
-    Text => Ok(TextValue(raw))
-    Integer => {
-      let start = if raw.has_prefix("-") || raw.has_prefix("+") { 1 } else { 0 }
-      if !ascii_digits(raw, start) {
-        return Err("Expected a decimal integer")
+    Text | Any => Ok(TextValue(raw))
+    Duration => cast_duration(raw)
+    GeoPoint => geopoint_text(raw)
+    GeoJson => {
+      let value = @json.parse(raw, preserve_number_repr=true) catch {
+        _ => return Err("Expected GeoJSON")
       }
-      let value = @string.parse_int64(raw) catch {
-        _ => return Err("Integer exceeds signed 64-bit range")
-      }
-      Ok(IntegerValue(value))
+      geojson_cell(value)
     }
-    Number => {
-      if !decimal_syntax(raw) {
-        return Err("Expected a finite decimal number")
+    Date | Time | DateTime | Year | YearMonth =>
+      normalize_temporal(kind_label(kind), raw).map(value => {
+        TemporalValue(value)
+      })
+    ObjectValueType | ArrayValueType => {
+      let value = @json.parse(raw, preserve_number_repr=true) catch {
+        _ => return Err("Expected valid JSON data")
       }
-      let value = @string.parse_double(raw) catch {
-        _ => return Err("Number cannot be represented")
-      }
-      if !value.is_finite() {
-        return Err("Non-finite numbers are outside the supported subset")
-      }
-      Ok(NumberValue(value))
+      cast_structured(value, kind)
     }
+    Integer => cast_integer(raw)
+    Number => cast_decimal(raw)
     Boolean =>
       match raw {
         "true" | "True" | "TRUE" | "1" => Ok(BooleanValue(true))

@@ -1,0 +1,10 @@
+{
+  "name": "mixed-dispatch",
+  "title": "CSV parts with inline JSON metadata",
+  "x-processing": {"original_id": 9007199254740993},
+  "resources": [
+    {"name": "files", "path": ["products.csv", "products-annex.csv"], "format": "csv"},
+    {"name": "metadata", "data": {"warehouse": "main", "period": "2024-02"}, "format": "json"},
+    {"name": "tracking", "path": "https://example.org/tracking.csv", "format": "csv"}
+  ]
+}

@@ -81,6 +81,10 @@ pub fn RowValidator::new(
   let fields = schema.fields.map(f => {
     ..f,
     enum_values: f.enum_values.map(v => v.copy()),
+    boolean_tokens: f.boolean_tokens.map(t => {
+      truthy: t.truthy.copy(),
+      falsy: t.falsy.copy(),
+    }),
   })
   Ok({
     name,
@@ -107,7 +111,7 @@ pub fn RowValidator::new(
 pub fn RowValidator::feed(self : RowValidator, row : Array[String]) -> Unit {
   self.rows += 1
   self.consume(row.length(), "Row width differs from schema", (i, f) => {
-    cast_cell(row[i], f.kind, self.missing)
+    cast_field_text(row[i], f, self.missing)
   })
 }
 
@@ -151,7 +155,7 @@ pub fn RowValidator::feed_json(self : RowValidator, row : Json) -> Unit {
   }
   if values is Some(v) {
     self.consume(v.length(), "JSON row width differs from schema", (i, f) => {
-      cast_json_cell(v[i], f.kind, self.missing)
+      cast_field_json(v[i], f, self.missing)
     })
   }
 }

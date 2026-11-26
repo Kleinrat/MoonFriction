@@ -1,6 +1,8 @@
 import {
   "moonbitlang/core/json",
   "moonbitlang/core/hashset",
+  "moonbitlang/core/bigint",
+  "moonbitlang/core/encoding/utf8",
   "moonbit-community/NyaCSV" @csv,
   "moonbitlang/core/string",
 }

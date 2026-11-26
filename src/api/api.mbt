@@ -30,7 +30,9 @@ pub fn inspect_json(text : String) -> String {
 
 ///|
 pub fn validate_json(text : String) -> String {
-  let input : BundleInput = @json.from_json(@json.parse(text)) catch {
+  let input : BundleInput = @json.from_json(
+    @json.parse(text, preserve_number_repr=true),
+  ) catch {
     _ =>
       return (
         {
@@ -136,23 +138,15 @@ priv struct InferInput {
 }
 
 ///|
-fn field_type_json_name(kind : @core.FieldType) -> String {
-  match kind {
-    Text => "string"
-    Integer => "integer"
-    Number => "number"
-    Boolean => "boolean"
-  }
-}
-
-///|
 /// Infer a draft descriptor from CSV text and return it as JSON.
 ///
 /// This is a thin boundary: all inference happens in MoonBit core. The caller
 /// receives a descriptor plus explicit sampling/ambiguity hints. The input CSV
 /// is never modified, and this function does not write files.
 pub fn infer_json(text : String) -> String {
-  let input : InferInput = @json.from_json(@json.parse(text)) catch {
+  let input : InferInput = @json.from_json(
+    @json.parse(text, preserve_number_repr=true),
+  ) catch {
     _ =>
       return (
         {
@@ -181,7 +175,7 @@ pub fn infer_json(text : String) -> String {
     sample_limit=input.sample_limit,
   )
   let field_jsons = inference.schema.fields.map(f => {
-    ({ "name": f.name, "type": field_type_json_name(f.kind) } : Json)
+    ({ "name": f.name, "type": @core.kind_label(f.kind) } : Json)
   })
   let schema_json : Json = ({ "fields": @json.to_json(field_jsons) } : Json)
   let descriptor : Json = (
@@ -233,4 +227,71 @@ pub fn schema_diff_json(old_text : String, new_text : String) -> String {
       "ok": true,
       "changes": @json.to_json(@core.diff_table_schemas(schemas[0], schemas[1])),
     } : Json).stringify()
+}
+
+///|
+pub fn inspect_data_package_json(text : String) -> String {
+  match @core.parse_data_package(text) {
+    Err(errors) =>
+      ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+    Ok(descriptor) => {
+      let resources = descriptor.resources.map(resource => {
+        let summary : Json = match resource.location {
+          LocalPaths(paths) =>
+            {
+              "name": resource.name,
+              "location": "local",
+              "paths": @json.to_json(paths),
+            }
+          RemoteUrls(urls) =>
+            {
+              "name": resource.name,
+              "location": "remote",
+              "paths": @json.to_json(urls),
+            }
+          InlineData(_) => { "name": resource.name, "location": "inline" }
+        }
+        if summary is Object(result) && resource.metadata is Object(metadata) {
+          if metadata.get("schema") is Some(String(reference)) {
+            result["schemaReference"] = Json::string(reference)
+          }
+          if metadata.get("dialect") is Some(String(reference)) {
+            result["dialectReference"] = Json::string(reference)
+          }
+          for key in ["bytes", "hash", "encoding"] {
+            if metadata.get(key) is Some(value) {
+              result[key] = value
+            }
+          }
+        }
+        summary
+      })
+      ({ "ok": true, "resources": @json.to_json(resources) } : Json).stringify()
+    }
+  }
+}
+
+///|
+pub fn check_mixed_descriptor_json(text : String) -> String {
+  match @core.parse_mixed_descriptor(text) {
+    Ok(_) => "{\"ok\":true}"
+    Err(errors) =>
+      ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+  }
+}
+
+///|
+pub fn validate_mixed_json(descriptor : String, inputs : String) -> String {
+  let parsed = match @core.parse_mixed_descriptor(descriptor) {
+    Ok(value) => value
+    Err(errors) =>
+      return ({ "ok": false, "errors": @json.to_json(errors) } : Json).stringify()
+  }
+  let sources : Array[@core.TabularResourceInput] = @json.from_json(
+    @json.parse(inputs),
+  ) catch {
+    _ =>
+      return "{\"ok\":false,\"errors\":[{\"code\":\"input\",\"message\":\"Expected named tabular resource parts\"}]}"
+  }
+  package_result(@core.validate_mixed_package(parsed, sources))
 }

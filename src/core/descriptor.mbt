@@ -157,9 +157,30 @@ fn length_bound(
 ///|
 /// Parse the documented local tabular subset, preserving original metadata for export.
 pub fn parse_descriptor(text : String) -> Result[Descriptor, Array[Diagnostic]] {
-  let original = @json.parse(text) catch {
+  let original = @json.parse(text, preserve_number_repr=true) catch {
     _ => return Err([issue("json", "", 0, "", "Invalid JSON descriptor")])
   }
+  parse_tabular_descriptor_value(original, mixed=false)
+}
+
+///|
+/// Parse CSV/JSON tabular rules over a general v1 manifest. The host resolves
+/// referenced schema and dialect objects before calling this entry point.
+pub fn parse_mixed_descriptor(
+  text : String,
+) -> Result[Descriptor, Array[Diagnostic]] {
+  match parse_data_package(text) {
+    Err(errors) => Err(errors)
+    Ok(descriptor) =>
+      parse_tabular_descriptor_value(descriptor.original, mixed=true)
+  }
+}
+
+///|
+fn parse_tabular_descriptor_value(
+  original : Json,
+  mixed~ : Bool,
+) -> Result[Descriptor, Array[Diagnostic]] {
   let errors : Array[Diagnostic] = []
   let resources : Array[Resource] = []
   let items = match prop(original, "resources") {
@@ -205,14 +226,21 @@ pub fn parse_descriptor(text : String) -> Result[Descriptor, Array[Diagnostic]] 
       )
     }
     let path = json_text(prop(item, "path")).unwrap_or("")
-    if !safe_resource_path(path) || prop(item, "data") != Json::null() {
+    if !mixed &&
+      (!safe_resource_path(path) || prop(item, "data") != Json::null()) {
       errors.push(
         issue(
           "unsupported", name, 0, "", "Only one safe local resource path is supported, without inline data",
         ),
       )
     }
-    if parse_csv_dialect(prop(item, "dialect")) is Err(message) {
+    let dialect = prop(item, "dialect")
+    let dialect_check = if mixed {
+      parse_tabular_csv_settings(dialect).map(settings => settings.dialect)
+    } else {
+      parse_csv_dialect(dialect)
+    }
+    if dialect_check is Err(message) {
       errors.push(issue("unsupported", name, 0, "dialect", message))
     }
     if prop(item, "compression") != Json::null() {
@@ -222,13 +250,22 @@ pub fn parse_descriptor(text : String) -> Result[Descriptor, Array[Diagnostic]] 
         ),
       )
     }
-    if prop(item, "encoding") != Json::null() &&
+    if !mixed &&
+      prop(item, "encoding") != Json::null() &&
       prop(item, "encoding") != Json::string("utf-8") {
       errors.push(
         issue("unsupported", name, 0, "", "Only utf-8 encoding is supported"),
       )
     }
-    if prop(item, "format") != Json::null() &&
+    if mixed {
+      if !["csv", "json"].contains(tabular_format(item)) {
+        errors.push(
+          issue(
+            "unsupported", name, 0, "format", "Expected CSV or tabular JSON",
+          ),
+        )
+      }
+    } else if prop(item, "format") != Json::null() &&
       prop(item, "format") != Json::string("csv") {
       errors.push(
         issue(

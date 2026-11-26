@@ -63,43 +63,39 @@ test "structural changes request review without inferring renames" {
 }
 
 ///|
-test "diff cautions on rounded integer bounds before checking equality" {
-  fn schema(rule : String, n : String) -> TableSchema {
+test "parsed integer bounds compare exactly across the Int64 limit" {
+  fn schema(rule : String, value : String) -> TableSchema {
     parse_table_schema(
       "{\"fields\":[{\"name\":\"n\",\"type\":\"integer\",\"constraints\":{\"" +
       rule +
       "\":" +
-      n +
+      value +
       "}}]}",
     ).unwrap()
   }
   for rule in ["minimum", "maximum"] {
     for
-      (x, y) in [
+      (older, newer) in [
         ("9007199254740992", "9007199254740993"),
-        ("-9007199254740992", "-9007199254740993"),
-        ("9223372036854775806", "9223372036854775807"),
-        ("-9223372036854775807", "-9223372036854775808"),
+        ("9223372036854775807", "9223372036854775808"),
+        ("-9223372036854775809", "-9223372036854775808"),
       ] {
-      for (old, current) in [(x, y), (y, x), (x, x)] {
-        let changes = diff_table_schemas(
-          schema(rule, old),
-          schema(rule, current),
-        )
-        assert_eq(changes.length(), 1)
-        assert_eq(changes[0].impact, "review")
-        assert_eq(changes[0].rule, rule)
-        assert_eq(
-          changes[0].before.stringify(),
-          "{\"precision\":\"outside-safe-integer-range\"}",
-        )
-      }
+      let previous = schema(rule, older)
+      let next = schema(rule, newer)
+      assert_true(diff_table_schemas(previous, previous).is_empty())
+      let changes = diff_table_schemas(previous, next)
+      assert_eq(changes.length(), 1)
+      assert_eq(changes[0].before.stringify(), older)
+      assert_eq(changes[0].after.stringify(), newer)
+      assert_eq(
+        changes[0].impact,
+        if rule == "minimum" {
+          "tightened"
+        } else {
+          "relaxed"
+        },
+      )
     }
-    let safe = schema(rule, "9007199254740991")
-    assert_true(diff_table_schemas(safe, safe).is_empty())
-    let crossing = diff_table_schemas(safe, schema(rule, "9007199254740992"))[0]
-    assert_eq(crossing.before.stringify(), "9007199254740991")
-    assert_eq(crossing.impact, "review")
   }
 }
 
@@ -123,7 +119,7 @@ test "type review carries effective constraints and preserves integer precision"
   assert_eq(
     snapshot.before.stringify(),
     (
-      #|{"required":true,"unique":false,"enum":[9007199254740993],"minimum":0,"maximum":{"precision":"outside-safe-integer-range"},"minLength":null,"maxLength":null}
+      #|{"required":true,"unique":false,"enum":[9007199254740993],"minimum":0,"maximum":9007199254740993,"minLength":null,"maxLength":null}
     ),
   )
   assert_eq(snapshot.after, {

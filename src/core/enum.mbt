@@ -1,10 +1,25 @@
 ///|
 fn enum_member_matches(cell : Cell, kind : FieldType) -> Bool {
   match (cell, kind) {
-    (TextValue(_), Text)
-    | (IntegerValue(_), Integer)
+    (TextValue(_), Text | Any)
+    | (IntegerValue(_) | BigIntegerValue(_), Integer)
     | (BooleanValue(_), Boolean) => true
     (NumberValue(n), Number) => n.is_finite()
+    (ExactNumberValue(_), Number) => true
+    (SpecialNumber(token), Number) => ["NaN", "INF", "-INF"].contains(token)
+    (TemporalValue(raw), Date | Time | DateTime | Year | YearMonth) =>
+      normalize_temporal(kind_label(kind), raw) == Ok(raw)
+    (TemporalValue(raw), Duration) => cast_duration(raw) is Ok(_)
+    (StructuredValue(raw), GeoPoint) => {
+      let value = @json.parse(raw) catch { _ => return false }
+      geopoint_json(value, "array") is Ok(_)
+    }
+    (StructuredValue(raw), GeoJson) => {
+      let value = @json.parse(raw) catch { _ => return false }
+      geojson_cell(value) is Ok(_) || topojson_cell(value) is Ok(_)
+    }
+    (StructuredValue(raw), ObjectValueType | ArrayValueType) =>
+      cast_cell(raw, kind, []) is Ok(_)
     _ => false
   }
 }
@@ -12,9 +27,8 @@ fn enum_member_matches(cell : Cell, kind : FieldType) -> Bool {
 ///|
 fn parse_enum(
   value : Json,
-  kind : FieldType,
+  field : Field,
   resource : String,
-  field_name : String,
   errors : Array[Diagnostic],
 ) -> Array[Cell]? {
   if value is Null {
@@ -23,17 +37,18 @@ fn parse_enum(
   if value is Array(items) && !items.is_empty() {
     let result = []
     for item in items {
-      // Schema entries are logical values. CSV-style string coercion applies only to data.
-      if !(item is String(_) && kind != Text) {
-        if cast_json_cell(item, kind, []) is Ok(cell) &&
-          enum_member_matches(cell, kind) {
-          result.push(cell)
-          continue
-        }
+      if cast_field_json(item, field, []) is Ok(cell) &&
+        enum_member_matches(cell, field.kind) {
+        result.push(cell)
+        continue
       }
       errors.push(
         issue(
-          "descriptor", resource, 0, field_name, "enum entry must match the field type",
+          "descriptor",
+          resource,
+          0,
+          field.name,
+          "enum entry must match the field type",
         ),
       )
       return None
@@ -42,7 +57,11 @@ fn parse_enum(
   }
   errors.push(
     issue(
-      "descriptor", resource, 0, field_name, "enum requires a nonempty array",
+      "descriptor",
+      resource,
+      0,
+      field.name,
+      "enum requires a nonempty array",
     ),
   )
   None

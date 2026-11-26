@@ -7,10 +7,13 @@ test "missing markers are exact and run before conversion" {
 }
 
 ///|
-test "integer lexical rules and signed bounds" {
+test "integer lexical rules and arbitrary precision" {
   assert_eq(cast_cell("001", Integer, []), Ok(IntegerValue(1L)))
   assert_eq(cast_cell("-3", Integer, []), Ok(IntegerValue(-3L)))
-  for raw in ["", "1.5", "1e2", " 1", "1 ", "0x10", "9223372036854775808"] {
+  assert_true(
+    cast_cell("9223372036854775808", Integer, []) is Ok(BigIntegerValue(_)),
+  )
+  for raw in ["", "1.5", "1e2", " 1", "1 ", "0x10"] {
     assert_true(cast_cell(raw, Integer, []) is Err(_))
   }
 }
@@ -18,7 +21,9 @@ test "integer lexical rules and signed bounds" {
 ///|
 test "finite decimal values and invalid lexical forms" {
   assert_eq(cast_cell("1.25e2", Number, []), Ok(NumberValue(125.0)))
-  for raw in ["NaN", "Infinity", "1e9999", "1,000", " ", "1.2.3", "1e"] {
+  assert_eq(cast_cell("NaN", Number, []), Ok(SpecialNumber("NaN")))
+  assert_true(cast_cell("1e9999", Number, []) is Ok(ExactNumberValue(_)))
+  for raw in ["Infinity", "1,000", " ", "1.2.3", "1e"] {
     assert_true(cast_cell(raw, Number, []) is Err(_))
   }
 }

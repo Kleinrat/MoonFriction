@@ -2,14 +2,20 @@
 package "Kleinrat/frictionless/src/core"
 
 import {
+  "moonbitlang/core/bigint",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
+  "moonbitlang/core/string",
 }
 
 // Values
 pub fn cast_cell(String, FieldType, Array[String]) -> Result[Cell, String]
 
 pub fn cast_json_cell(@json.Json, FieldType, Array[String]) -> Result[Cell, String]
+
+pub fn compare_temporal(String, String, String) -> Int32
+
+pub fn compile_field_pattern(String) -> Result[FieldPattern, String]
 
 pub fn diff_table_schemas(TableSchema, TableSchema) -> Array[SchemaChange]
 
@@ -21,17 +27,31 @@ pub fn input_from_csv(String, String, dialect? : CsvDialect) -> Result[InputTabl
 
 pub fn input_from_json(String, String) -> Result[JsonInputTable, String]
 
+pub fn kind_label(FieldType) -> String
+
+pub fn normalize_temporal(String, String) -> Result[String, String]
+
+pub fn normalize_temporal_format(String, String, String) -> Result[String, String]
+
+pub fn parse_data_package(String) -> Result[DataPackage, Array[Diagnostic]]
+
 pub fn parse_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
+
+pub fn parse_mixed_descriptor(String) -> Result[Descriptor, Array[Diagnostic]]
 
 pub fn parse_table_schema(String) -> Result[TableSchema, Array[Diagnostic]]
 
 pub fn safe_resource_path(String) -> Bool
+
+pub fn supports_temporal_format(String, String) -> Bool
 
 pub fn validate_foreign_key(Table, Array[String], Table, Array[String]) -> Array[Diagnostic]
 
 pub fn validate_json_package(Descriptor, Array[JsonInputTable]) -> PackageReport
 
 pub fn validate_json_table(String, Array[Field], JsonInputTable, missing_values? : Array[String]) -> TableReport
+
+pub fn validate_mixed_package(Descriptor, Array[TabularResourceInput]) -> PackageReport
 
 pub fn validate_package(Descriptor, Array[InputTable]) -> PackageReport
 
@@ -44,13 +64,24 @@ pub fn validate_table_schema(String, TableSchema, Array[String], Array[Array[Str
 // Errors
 
 // Types and methods
+#derive(@debug.Debug)
+pub(all) struct BooleanTokens {
+  truthy : Array[String]
+  falsy : Array[String]
+}
+
 #derive(Eq, Hash, @debug.Debug)
 pub(all) enum Cell {
   Missing
   TextValue(String)
   IntegerValue(Int64)
+  BigIntegerValue(@bigint.BigInt)
   NumberValue(Double)
+  ExactNumberValue(ExactDecimal)
+  SpecialNumber(String)
   BooleanValue(Bool)
+  StructuredValue(String)
+  TemporalValue(String)
 }
 
 #derive(Eq, @debug.Debug)
@@ -58,6 +89,21 @@ pub(all) struct CsvDialect {
   delimiter : Char
   quote_char : Char
 }
+
+#derive(@debug.Debug)
+pub(all) struct DataPackage {
+  original : @json.Json
+  resources : Array[DataResource]
+}
+
+#derive(@debug.Debug)
+pub(all) struct DataResource {
+  name : String
+  location : ResourceLocation
+  metadata : @json.Json
+}
+pub fn DataResource::read(Self, (String) -> Result[Bytes, String], (String) -> Result[Bytes, String], max_bytes? : Int32) -> Result[ResourceContent, String]
+pub fn DataResource::resolve_schema(Self, (String) -> Result[Bytes, String], (String) -> Result[Bytes, String]) -> Result[@json.Json?, String]
 
 #derive(@debug.Debug)
 pub(all) struct Descriptor {
@@ -77,10 +123,20 @@ pub(all) struct Diagnostic {
 
 type ErrorSample
 
+#derive(Eq, Hash, @debug.Debug)
+pub(all) struct ExactDecimal {
+  negative : Bool
+  digits : String
+  exponent : @bigint.BigInt
+}
+
 #derive(@debug.Debug)
 pub(all) struct Field {
   name : String
   kind : FieldType
+  format : String
+  boolean_tokens : BooleanTokens?
+  numeric_format : NumericFormat?
   required : Bool
   enum_values : Array[Cell]?
   unique : Bool
@@ -88,6 +144,19 @@ pub(all) struct Field {
   maximum : Double?
   min_length : Int32?
   max_length : Int32?
+  pattern : FieldPattern?
+  decimal_minimum : ExactDecimal?
+  decimal_maximum : ExactDecimal?
+  exact_minimum : @bigint.BigInt?
+  exact_maximum : @bigint.BigInt?
+  temporal_minimum : String?
+  temporal_maximum : String?
+}
+
+#derive(@debug.Debug)
+pub struct FieldPattern {
+  source : String
+  matcher : @string.Regex
 }
 
 #derive(Eq, @debug.Debug)
@@ -96,6 +165,17 @@ pub(all) enum FieldType {
   Integer
   Number
   Boolean
+  ObjectValueType
+  ArrayValueType
+  Any
+  Date
+  Time
+  DateTime
+  Year
+  YearMonth
+  Duration
+  GeoPoint
+  GeoJson
 }
 
 #derive(@debug.Debug)
@@ -132,6 +212,13 @@ pub(all) enum JsonRowMode {
 }
 
 #derive(@debug.Debug)
+pub(all) struct NumericFormat {
+  bare : Bool
+  decimal : String
+  group : String?
+}
+
+#derive(@debug.Debug)
 pub(all) struct PackageReport {
   tables : Array[Table]
   errors : Array[Diagnostic]
@@ -146,6 +233,19 @@ pub(all) struct Resource {
   missing_values : Array[String]
   primary_key : Array[String]
   foreign_keys : Array[ForeignKey]
+}
+
+#derive(@debug.Debug)
+pub(all) enum ResourceContent {
+  FileBytes(Bytes)
+  InlineValue(@json.Json)
+}
+
+#derive(@debug.Debug)
+pub(all) enum ResourceLocation {
+  LocalPaths(Array[String])
+  RemoteUrls(Array[String])
+  InlineData(@json.Json)
 }
 
 pub(all) struct RowSummary {
@@ -203,6 +303,12 @@ pub(all) struct TableSchema {
 }
 pub fn TableSchema::validate(Self, String, Array[String], Array[Array[String]], missing_values? : Array[String]?) -> TableReport
 pub fn TableSchema::validate_json(Self, String, JsonInputTable) -> TableReport
+
+#derive(@debug.Debug, @json.FromJson)
+pub(all) struct TabularResourceInput {
+  name : String
+  parts : Array[String]
+}
 
 // Type aliases
 

@@ -1,0 +1,30 @@
+{
+  "name": "multipart-dispatch",
+  "resources": [
+    {
+      "name": "products",
+      "path": ["products.csv", "products-annex.csv"],
+      "schema": {
+        "fields": [{"name":"sku","constraints":{"pattern":"^P[0-9]+$"}},{"name":"name"}],
+        "primaryKey": "sku"
+      }
+    },
+    {
+      "name": "shipments",
+      "data": [
+        ["id", "sku", "quantity"],
+        [9007199254740993, "P30", 2],
+        [9007199254740994, "P10", 1]
+      ],
+      "schema": {
+        "fields": [
+          {"name":"id","type":"integer"},
+          {"name":"sku","constraints":{"required":true}},
+          {"name":"quantity","type":"integer","constraints":{"minimum":1}}
+        ],
+        "primaryKey": "id",
+        "foreignKeys": [{"fields":"sku","reference":{"resource":"products","fields":"sku"}}]
+      }
+    }
+  ]
+}

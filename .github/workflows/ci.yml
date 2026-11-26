@@ -39,6 +39,8 @@ jobs:
           python scripts/test_embedding.py
       - name: Reference interoperability
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
           python -m pip install -r scripts/requirements-reference.txt
           python scripts/test_reference.py
           python scripts/test_asset_consumer.py --reference

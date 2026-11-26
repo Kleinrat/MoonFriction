@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 import {readFile,realpath,stat,mkdtemp,mkdir,writeFile,rename,rm} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {schema_diff_json,inspect_json,validate_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
-const decode=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+import {schema_diff_json,inspect_json,inspect_data_package_json,check_mixed_descriptor_json,validate_mixed_json,validate_json_files,open_csv_stream,push_csv_chunk,finish_csv_stream} from '../_build/js/release/build/src/api/api.js';
+const packageFileLimit = 16 * 1024 * 1024;
+const decode = (bytes, encoding = 'utf-8') => new TextDecoder(encoding, {fatal: true}).decode(bytes);
+const isRemote = value => /^https?:\/\//i.test(value);
+const safeRelative = value => !/[\\:\x00]/.test(value) &&
+  value.split('/').every(part => part && part !== '.' && part !== '..');
+
 async function readPackageFile(base, relative) {
   const file = await realpath(path.resolve(base, relative));
   const rel = path.relative(base, file);
@@ -12,7 +18,7 @@ async function readPackageFile(base, relative) {
     throw Error('Resource escapes package directory: ' + relative);
   }
   const info = await stat(file);
-  if (!info.isFile() || info.size > 16 * 1024 * 1024) {
+  if (!info.isFile() || info.size > packageFileLimit) {
     throw Error('Resource must be a regular file of at most 16 MiB: ' + relative);
   }
   return readFile(file);
@@ -65,16 +71,104 @@ async function loadDescriptor(descriptorPath) {
   return {base, text, report: JSON.parse(inspect_json(text))};
 }
 
-export async function loadBundle(descriptorPath) {
-  const {base, text, report: info} = await loadDescriptor(descriptorPath);
-  if (!info.ok) return {report: info};
-  const files = [];
-  for (const item of info.resources) {
-    files.push({...item, bytes: await readPackageFile(base, item.path)});
+function resourceError(resource, field, message) {
+  return {report: {ok: false, errors: [{code: 'descriptor', resource, row: 0, field, message}]}};
+}
+
+async function readRemoteResource(location) {
+  const address = new URL(location);
+  if (!['http:', 'https:'].includes(address.protocol) || address.username || address.password) {
+    throw Error('Expected an HTTP(S) resource URL without credentials');
   }
-  const resources = files.map(f => ({name: f.name, csv: decode(f.bytes)}));
-  const request = '{"descriptor":' + text + ',"resources":' + JSON.stringify(resources) + '}';
-  return {descriptor: JSON.parse(text), descriptorText: text, files, report: JSON.parse(validate_json(request))};
+  const response = await fetch(address, {
+    redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok || response.body === null) {
+    await response.body?.cancel();
+    throw Error('Remote resource returned HTTP ' + response.status);
+  }
+  if (Number(response.headers.get('content-length')) > packageFileLimit) {
+    await response.body.cancel();
+    throw Error('Remote resource exceeds 16 MiB');
+  }
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body) {
+    total += chunk.length;
+    if (total > packageFileLimit) throw Error('Remote resource exceeds 16 MiB');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function readRelativePackageFile(base, relative) {
+  if (typeof base === 'string') return readPackageFile(base, relative);
+  const encoded = relative.split('/').map(encodeURIComponent).join('/');
+  return readRemoteResource(new URL(encoded, base).href);
+}
+
+export async function loadBundle(descriptorPath, {allowRemote = false} = {}) {
+  const {base, descriptorText, report: manifest} = await loadDataPackage(descriptorPath, false, allowRemote);
+  if (!manifest.ok) return {report: manifest};
+  const descriptor = parseDocument(descriptorText);
+  const locations = new Map(manifest.resources.map(item => [item.name, item]));
+  const cache = new Map();
+  const files = new Map();
+  async function read(location) {
+    if (!cache.has(location)) {
+      const bytes = isRemote(location)
+        ? await readRemoteResource(location)
+        : await readRelativePackageFile(base, location);
+      cache.set(location, bytes);
+    }
+    return cache.get(location);
+  }
+  let hasReferences = false;
+  for (const item of descriptor.resources) {
+    const info = locations.get(item.name);
+    for (const [field, ref] of [['schema', info.schemaReference], ['dialect', info.dialectReference]]) {
+      if (ref === undefined) continue;
+      if (!(isRemote(ref) ? allowRemote : safeRelative(ref))) {
+        return resourceError(item.name, field, 'Expected a contained relative path or an enabled remote reference');
+      }
+      let document;
+      const bytes = await read(ref);
+      try {
+        document = parseDocument(decode(bytes));
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+      if (!document || typeof document !== 'object' || Array.isArray(document) || JSON.isRawJSON(document)) {
+        return resourceError(item.name, field, 'Expected a JSON object in ' + ref);
+      }
+      item[field] = document;
+      hasReferences = true;
+    }
+  }
+  const text = hasReferences ? JSON.stringify(descriptor) : descriptorText;
+  const preflight = JSON.parse(check_mixed_descriptor_json(text));
+  if (!preflight.ok) return {report: preflight};
+  const inputs = [];
+  for (const resource of manifest.resources) {
+    if (resource.location === 'remote' && !allowRemote) {
+      return resourceError(resource.name, 'path', 'Remote resources require --allow-remote');
+    }
+    const parts = [];
+    for (const name of resource.paths ?? []) {
+      if (resource.location === 'local' && name === 'datapackage.json') {
+        throw Error('A resource cannot overwrite the exported datapackage.json');
+      }
+      const bytes = await read(name);
+      if (resource.location === 'local') files.set(name, {path: name, bytes});
+      parts.push(bytes);
+    }
+    if (resource.location !== 'inline') verifyResource(resource, parts);
+    inputs.push({name: resource.name, parts: parts.map(bytes => decode(bytes, resource.encoding))});
+  }
+  return {
+    descriptor: JSON.parse(text), descriptorText: text, files: [...files.values()],
+    report: JSON.parse(validate_mixed_json(text, JSON.stringify(inputs))),
+  };
 }
 export async function exportBundle(bundle,destination){
   if(!bundle.report.ok) throw Error('Refusing to export an invalid package');
@@ -91,6 +185,70 @@ export async function exportBundle(bundle,destination){
     await rename(stage,dest);
   }catch(e){await rm(stage,{recursive:true,force:true});throw e;}
 }
+function verifyResource(resource, parts) {
+  if (resource.bytes !== undefined &&
+      parts.reduce((total, bytes) => total + bytes.length, 0) !== resource.bytes) {
+    throw Error('Resource size does not match bytes: ' + resource.name);
+  }
+  if (resource.hash !== undefined) {
+    const separator = resource.hash.indexOf(':');
+    const algorithm = separator === -1 ? 'md5' : resource.hash.slice(0, separator);
+    const expected = resource.hash.slice(separator + 1).toLowerCase();
+    const digest = createHash(algorithm);
+    for (const bytes of parts) digest.update(bytes);
+    if (digest.digest('hex') !== expected) {
+      throw Error('Resource checksum does not match hash: ' + resource.name);
+    }
+  }
+}
+async function loadDataPackage(descriptorPath, readLocalFiles, allowRemote = false) {
+  let base;
+  let descriptorBytes;
+  if (isRemote(descriptorPath)) {
+    if (!allowRemote) throw Error('Remote descriptors require --allow-remote');
+    descriptorBytes = await readRemoteResource(descriptorPath);
+    base = new URL('.', descriptorPath);
+  } else {
+    const full = await realpath(descriptorPath);
+    base = path.dirname(full);
+    descriptorBytes = await readFile(full);
+  }
+  const descriptorText = decode(descriptorBytes);
+  const report = JSON.parse(inspect_data_package_json(descriptorText));
+  const files = new Map();
+  if (report.ok && readLocalFiles) {
+    const descriptorPaths = new Set();
+    for (const resource of report.resources) {
+      if (resource.location === 'local') {
+        for (const file of resource.paths) files.set(file, null);
+      }
+      for (const ref of [resource.schemaReference, resource.dialectReference]) {
+        if (ref && !isRemote(ref)) {
+          if (!safeRelative(ref)) throw Error('Invalid descriptor reference: ' + ref);
+          files.set(ref, null);
+          descriptorPaths.add(ref);
+        }
+      }
+    }
+    if (files.has('datapackage.json')) {
+      throw Error('A resource cannot overwrite the exported datapackage.json');
+    }
+    for (const file of files.keys()) {
+      const bytes = await readRelativePackageFile(base, file);
+      if (descriptorPaths.has(file)) {
+        const schema = parseDocument(decode(bytes));
+        if (!schema || typeof schema !== 'object' || Array.isArray(schema) || JSON.isRawJSON(schema)) {
+          throw Error('Expected a JSON descriptor object in ' + file);
+        }
+      }
+      files.set(file, {path: file, bytes});
+    }
+    for (const resource of report.resources) {
+      if (resource.location === 'local') verifyResource(resource, resource.paths.map(file => files.get(file).bytes));
+    }
+  }
+  return {base, descriptorText, report, files: [...files.values()]};
+}
 export async function checkJsonFiles(descriptorPath, mappings) {
   const {text: descriptor, report} = await loadDescriptor(descriptorPath);
   if (!report.ok) return report;
@@ -103,7 +261,7 @@ export async function checkJsonFiles(descriptorPath, mappings) {
     const name = mapping.slice(0, separator);
     const file = mapping.slice(separator + 1);
     const info = await stat(file);
-    if (!info.isFile() || info.size > 16 * 1024 * 1024) {
+    if (!info.isFile() || info.size > packageFileLimit) {
       throw Error('Resource must be a regular file of at most 16 MiB: ' + file);
     }
     // Pass the original text so JavaScript never rounds Int64 identifiers.
@@ -151,8 +309,24 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
       console.error(JSON.stringify({ok:false,error:error.message}));
       process.exitCode = 2;
     }
+  } else if (['inspect-package', 'export-package'].includes(command) && file) {
+    try {
+      const exporting = command === 'export-package';
+      const options = exporting ? args.slice(1) : args;
+      if ((exporting && (!destination || destination === '--allow-remote')) ||
+          options.length > 1 || options.some(option => option !== '--allow-remote')) {
+        throw Error('Invalid command arguments');
+      }
+      const bundle = await loadDataPackage(file, exporting, options.includes('--allow-remote'));
+      if (exporting && bundle.report.ok) await exportBundle(bundle, destination);
+      console.log(JSON.stringify(bundle.report, null, 2));
+      process.exitCode = bundle.report.ok ? 0 : 1;
+    } catch (error) {
+      console.error(JSON.stringify({ok:false,error:error.message}));
+      process.exitCode = 2;
+    }
   } else if(!['inspect','validate','export','validate-json','validate-stream'].includes(command)||!file||((command==='export'||command==='validate-json'||command==='validate-stream')&&!destination)){
-    console.error('Usage: node scripts/cli.mjs schema diff OLD.json NEW.json\n       node scripts/cli.mjs inspect|validate datapackage.json\n       node scripts/cli.mjs export datapackage.json DESTINATION\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
+    console.error('Usage: node scripts/cli.mjs schema diff OLD.json NEW.json\n       node scripts/cli.mjs inspect datapackage.json\n       node scripts/cli.mjs validate datapackage.json [--allow-remote]\n       node scripts/cli.mjs inspect-package datapackage.json [--allow-remote]\n       node scripts/cli.mjs export-package datapackage.json DESTINATION [--allow-remote]\n       node scripts/cli.mjs export datapackage.json DESTINATION [--allow-remote]\n       node scripts/cli.mjs validate-json datapackage.json RESOURCE=FILE.json ...\n       node scripts/cli.mjs validate-stream SCHEMA.json DATA.csv [--max-errors N] [--delimiter ,|;|tab] [--quote CHAR]');process.exitCode=2;
   }else{
     try{
       let bundle;
@@ -161,7 +335,14 @@ if(process.argv[1]&&(await realpath(process.argv[1]).catch(()=>null))===fileURLT
       } else if (command === 'validate-json') {
         bundle = {report: await checkJsonFiles(file, args)};
       } else {
-        bundle = command === 'inspect' ? await loadDescriptor(file) : await loadBundle(file);
+        const options = command === 'export' ? args.slice(1) : args;
+        if (options.length > 1 || options.some(option => option !== '--allow-remote') ||
+            (command === 'inspect' && options.length > 0)) {
+          throw Error('Invalid command arguments');
+        }
+        bundle = command === 'inspect'
+          ? await loadDescriptor(file)
+          : await loadBundle(file, {allowRemote: options.includes('--allow-remote')});
       }
       if(command==='export'&&bundle.report.ok) await exportBundle(bundle,destination);
       console.log(JSON.stringify(bundle.report,null,2));process.exitCode=bundle.report.ok?0:1;

@@ -50,6 +50,7 @@ node scripts/explain.mjs "$MOONFRICTION_DEMO/exported/datapackage.json"
 | maxLength | 文本长于长度上限 | 核对文本内容及最大长度规则。 |
 | minimum | 数值低于下限 | 核对数值及定义的最小值。 |
 | minLength | 文本短于长度下限 | 补充文本或核对最小长度规则。 |
+| pattern | 字段格式与正则约束不符 | 检查该列的值是否满足 constraints.pattern。保持规则和数据的大小写一致。 |
 | primary-key-duplicate | 记录编号重复 | 让主键或组合主键能够唯一标识记录。 |
 | primary-key-null | 记录编号缺失 | 补齐主键的所有组成字段。 |
 | primary-key-schema | 主键规则不合法 | 使用已定义字段，检查组合键是否为空或重复。 |

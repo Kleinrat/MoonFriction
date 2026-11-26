@@ -24,9 +24,17 @@ pub fn input_from_json(
   name : String,
   text : String,
 ) -> Result[JsonInputTable, String] {
-  let value = @json.parse(text) catch {
+  let value = @json.parse(text, preserve_number_repr=true) catch {
     _ => return Err("Invalid JSON row data")
   }
+  json_input_value(name, value)
+}
+
+///|
+fn json_input_value(
+  name : String,
+  value : Json,
+) -> Result[JsonInputTable, String] {
   let items = match value {
     Array(items) => items
     _ => return Err("JSON rows must be a top-level array")
@@ -53,41 +61,10 @@ pub fn input_from_json(
 }
 
 ///|
-fn json_exact_integer(number : Double, repr : String?) -> Result[Int64, String] {
-  match repr {
-    Some(raw) => {
-      let start = if raw.has_prefix("-") || raw.has_prefix("+") { 1 } else { 0 }
-      if !ascii_digits(raw, start) {
-        return Err("JSON number is not an integer")
-      }
-      let value = @string.parse_int64(raw) catch {
-        _ => return Err("JSON integer exceeds signed 64-bit range")
-      }
-      Ok(value)
-    }
-    None =>
-      if !number.is_finite() || number != number.trunc() {
-        Err("JSON number is not an integer")
-      } else if number > 9007199254740991.0 || number < -9007199254740991.0 {
-        Err("JSON integer is outside the exact 64-bit range")
-      } else {
-        Ok(number.to_int64())
-      }
-  }
-}
-
-///|
-/// Convert one JSON value without stringifying it first.
-///
-/// Policy:
-/// - JSON null is Missing.
-/// - For string fields only JSON strings are accepted.
-/// - For integer/number/boolean fields, a JSON string uses the same strict
-///   physical lexical rules as CSV; native numbers/booleans must match the
-///   field kind. Arrays and objects are never accepted as scalar values.
-/// - A native JSON number for an integer field must have an exact 64-bit
-///   integral value; `1.0` is accepted as 1, `9007199254740993` keeps its exact
-///   representation via the JSON parser's `repr`.
+/// Convert a JSON value using the default format for the declared type.
+/// Native structures are accepted for object, array and GeoJSON fields.
+/// Numbers retain their exact source literals when the JSON parser provides them.
+/// Null and configured string markers are matched before type conversion.
 pub fn cast_json_cell(
   value : Json,
   kind : FieldType,
@@ -99,21 +76,28 @@ pub fn cast_json_cell(
     Number(number, repr~) =>
       match kind {
         Integer =>
-          match json_exact_integer(number, repr) {
-            Ok(value) => Ok(IntegerValue(value))
-            Err(message) => Err(message)
+          match repr {
+            Some(raw) => cast_json_integer_text(raw)
+            None =>
+              if !number.is_finite() || number != number.trunc() {
+                Err("JSON number is not an integer")
+              } else if number < -9007199254740991.0 ||
+                number > 9007199254740991.0 {
+                Err(
+                  "JSON integer requires an exact literal above the safe integer range",
+                )
+              } else {
+                Ok(IntegerValue(number.to_int64()))
+              }
           }
-        Number =>
-          if number.is_finite() {
-            Ok(NumberValue(number))
-          } else {
-            Err("Non-finite JSON numbers are outside the supported subset")
-          }
+        Number => cast_decimal(repr.unwrap_or(value.stringify()))
         Text =>
           Err(
             "JSON number cannot be used for a string field without a declared conversion",
           )
-        Boolean => Err("JSON number cannot be used for a boolean field")
+        Year => cast_cell(value.stringify(), kind, missing_values)
+        Any => Ok(TextValue(value.stringify()))
+        _ => Err("JSON number does not match the field type")
       }
     True | False =>
       match kind {
@@ -122,11 +106,15 @@ pub fn cast_json_cell(
           Err(
             "JSON boolean cannot be used for a string field without a declared conversion",
           )
-        Integer | Number =>
-          Err("JSON boolean cannot be used for a numeric field")
+        Any => Ok(TextValue(value.stringify()))
+        _ => Err("JSON boolean does not match the field type")
       }
     Array(_) | Object(_) =>
-      Err("JSON arrays and objects are not scalar cell values")
+      match kind {
+        Any => Ok(TextValue(canonical_json(value).stringify()))
+        GeoJson => geojson_cell(value)
+        _ => cast_structured(value, kind)
+      }
   }
 }
 
@@ -164,7 +152,7 @@ pub fn validate_json_table(
     }
     let logical : Array[Cell] = []
     for column, f in fields {
-      let cell = match cast_json_cell(values[column], f.kind, missing_values) {
+      let cell = match cast_field_json(values[column], f, missing_values) {
         Ok(value) => value
         Err(message) => {
           errors.push(issue("type", name, number, f.name, message))

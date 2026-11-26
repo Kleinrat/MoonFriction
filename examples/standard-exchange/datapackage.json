@@ -1,0 +1,38 @@
+{
+  "name": "standard-exchange",
+  "profile": "tabular-data-package",
+  "title": "Warehouse dispatch",
+  "resources": [
+    {
+      "name": "products",
+      "path": "products.csv",
+      "format": "csv",
+      "profile": "tabular-data-resource",
+      "schema": {
+        "fields": [
+          {"name": "sku", "type": "string", "constraints": {"pattern": "^P[0-9]+$"}},
+          {"name": "name", "type": "string", "constraints": {"required": true}}
+        ],
+        "primaryKey": "sku"
+      }
+    },
+    {
+      "name": "shipments",
+      "path": "shipments.csv",
+      "format": "csv",
+      "profile": "tabular-data-resource",
+      "schema": {
+        "fields": [
+          {"name": "shipment_id", "type": "integer"},
+          {"name": "sku", "type": "string", "constraints": {"required": true}},
+          {"name": "shipped_on", "type": "date", "constraints": {"minimum": "2024-02-29"}},
+          {"name": "quantity", "type": "integer", "constraints": {"minimum": 1}},
+          {"name": "packed", "type": "boolean", "trueValues": ["yes"], "falseValues": ["no"]},
+          {"name": "details", "type": "object"}
+        ],
+        "primaryKey": "shipment_id",
+        "foreignKeys": [{"fields": "sku", "reference": {"resource": "products", "fields": "sku"}}]
+      }
+    }
+  ]
+}

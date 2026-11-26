@@ -40,7 +40,7 @@ test "unsupported features never silently pass" {
   let good = fixture_descriptor()
   for
     (before, after) in [
-      ("\"integer\"", "\"date\""),
+      ("\"integer\"", "\"unknown-type\""),
       ("\"schema\":{", "\"encoding\":\"latin1\",\"schema\":{"),
       ("\"schema\":{", "\"dialect\":{\"escapeChar\":true},\"schema\":{"),
       ("\"schema\":{", "\"profile\":\"custom\",\"schema\":{"),

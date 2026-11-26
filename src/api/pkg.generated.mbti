@@ -2,9 +2,13 @@
 package "Kleinrat/frictionless/src/api"
 
 // Values
+pub fn check_mixed_descriptor_json(String) -> String
+
 pub fn finish_csv_stream(CsvSession) -> String
 
 pub fn infer_json(String) -> String
+
+pub fn inspect_data_package_json(String) -> String
 
 pub fn inspect_json(String) -> String
 
@@ -17,6 +21,8 @@ pub fn schema_diff_json(String, String) -> String
 pub fn validate_json(String) -> String
 
 pub fn validate_json_files(String, String) -> String
+
+pub fn validate_mixed_json(String, String) -> String
 
 // Errors
 

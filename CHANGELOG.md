@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.11.0 — 2026-11-27
+
+- 自定义 datetime 的 `%z` 支持秒和 1–6 位小数秒偏移。使用整数微秒转换到 UTC，并以转换后的值校验范围和唯一性。
+- 默认 datetime 与 Data Package 的 `created` 校验已公布的历史闰秒。无时区的 `year` 和 `yearmonth` 支持负值和超四位年份。
+- 内置表格 profile 校验资源声明、Table Schema 和内嵌 JSON 行结构。
+- 110 项 MoonBit 测试通过。新增 Python `strptime`、Frictionless Framework 和 `xmllint` 对照，覆盖有效输入、错误输入和导出读回。
+- 带时区的年份和年月、XML Schema 正则的部分语义、元数据邮箱格式及部分 CSV Dialect 行为仍有差异。[兼容性记录](docs/COMPATIBILITY.md)
+
 ## 0.10.0 — 2026-11-26
 
 - 自定义日期和时钟格式支持英文月份与星期、年内日序、ISO 周日期、12 小时制和 C locale 格式简写。

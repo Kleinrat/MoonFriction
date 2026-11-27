@@ -261,3 +261,61 @@ test "calendar names, ordinal dates, week dates and locale time formats normaliz
     assert_true(normalize_temporal_format(kind, raw, format) is Err(_))
   }
 }
+
+///|
+test "custom UTC offsets preserve seconds, microseconds and calendar rollover" {
+  let format = "%Y-%m-%dT%H:%M:%S%z"
+  for
+    (raw, expected) in [
+      ("2024-11-26T12:00:00+01:02:03", "2024-11-26T10:57:57Z"),
+      ("2024-11-26T12:00:00+010203", "2024-11-26T10:57:57Z"),
+      ("2024-03-01T00:00:00+00:00:00.000001", "2024-02-29T23:59:59.999999Z"),
+      ("2024-12-31T23:59:59-000001.9", "2025-01-01T00:00:00.9Z"),
+    ] {
+    assert_eq(normalize_temporal_format("datetime", raw, format), Ok(expected))
+  }
+  assert_eq(
+    normalize_temporal_format(
+      "datetime", "2024-11-26T12:00:00.25-00:00:00.999999", "%Y-%m-%dT%H:%M:%S.%f%z",
+    ),
+    Ok("2024-11-26T12:00:01.249999Z"),
+  )
+  assert_eq(
+    normalize_temporal_format(
+      "datetime",
+      "2024-11-26T12:00:00+0100123",
+      format + "123",
+    ),
+    Ok("2024-11-26T11:00:00Z"),
+  )
+  for
+    offset in [
+      "+00:00:60", "+01:0203", "+0102:03", "+00:00:00.1234567", "+00:00:00.", "+24:00:00",
+      "+01:02:9", "+01:02.5",
+    ] {
+    assert_true(
+      normalize_temporal_format(
+        "datetime",
+        "2024-11-26T12:00:00" + offset,
+        format,
+      )
+      is Err(_),
+    )
+  }
+}
+
+///|
+test "fractional UTC offsets use the same logical instant for bounds and uniqueness" {
+  let descriptor =
+    #|{"fields":[{"name":"when","type":"datetime","format":"%Y-%m-%dT%H:%M:%S.%f%z","constraints":{"minimum":"2024-03-01T00:00:00.000001Z","unique":true}}]}
+  let schema = parse_table_schema(descriptor).unwrap()
+  let report = validate_table("times", schema.fields, ["when"], [
+    ["2024-03-01T01:02:03.200001+01:02:03.2"],
+    ["2024-03-01T00:00:00.000001Z"],
+    ["2024-03-01T00:00:00.000001+00:00:00.000001"],
+  ])
+  assert_eq(report.errors.map(error => (error.row, error.code)), [
+    (2, "unique"),
+    (3, "minimum"),
+  ])
+}

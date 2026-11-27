@@ -6,7 +6,7 @@
 
 把 CSV、字段定义和表间关系放在一个标准数据包中：读取描述文件，转换字段类型，检查约束、主键和外键，再导出其他工具能够读取的数据包。
 
-0.10.0 增加自定义日期格式、GeoJSON 和 TopoJSON 边界框校验，以及包级和资源级的自定义 profile 校验。发布版的规范覆盖情况与后续符合性目标见[兼容性记录](docs/COMPATIBILITY.md)。[Mooncakes 安装入口](https://mooncakes.io/docs/Kleinrat/frictionless@0.10.0)
+0.11.0 增加秒级和小数秒时区偏移、历史闰秒、无时区的扩展年份，以及内置表格 profile 校验。发布版的规范覆盖情况与后续符合性目标见[兼容性记录](docs/COMPATIBILITY.md)。[Mooncakes 安装入口](https://mooncakes.io/docs/Kleinrat/frictionless@0.11.0)
 
 [持续集成](https://github.com/Kleinrat/MoonFriction/actions) · [测试记录](docs/TESTING-2026-11-13.md) · [版本更新](CHANGELOG.md)
 
@@ -158,7 +158,7 @@ node scripts/infer.mjs examples/shop/products.csv
 
 ```sh
 moon update
-moon add Kleinrat/frictionless@0.10.0
+moon add Kleinrat/frictionless@0.11.0
 ```
 
 在调用包的 `moon.pkg` 中加入：

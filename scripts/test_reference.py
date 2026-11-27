@@ -2,6 +2,7 @@
 Run after building: python scripts/test_reference.py (in a dedicated reference venv).
 """
 from pathlib import Path
+from datetime import datetime, timezone
 import csv, hashlib, json, shutil, subprocess, tempfile
 from xml.etree import ElementTree
 import frictionless
@@ -128,6 +129,95 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
             assert report.valid == expected and actual.returncode == int(not expected), (dtype, raw)
     print('Custom time formats: Frictionless and MoonFriction agree on fractions, month names, ordinal dates, ISO week dates and 12-hour time')
 
+    # Compare normal forms with Python and cover valid and malformed offsets
+    # via normal CLI validation paths as well as export/readback.
+    offset_format = '%Y-%m-%dT%H:%M:%S.%f%z'
+    timed = work / 'second-offset'
+    timed.mkdir()
+    timed_manifest = timed / 'datapackage.json'
+    timed_csv = timed / 'times.csv'
+    timestamp_field = {'name': 'when', 'type': 'datetime', 'format': offset_format}
+    threshold = '2024-03-01T00:00:00.000001Z'
+    timed_manifest.write_text(json.dumps({'resources': [{
+        'name': 'times', 'path': timed_csv.name,
+        'schema': {'fields': [{**timestamp_field, 'constraints': {'minimum': threshold}}]},
+    }]}), encoding='utf-8')
+    time_schema.write_text(json.dumps({'fields': [timestamp_field]}), encoding='utf-8')
+    cases = [
+        ('2024-03-01T01:02:03.200001+01:02:03.2', True, True),
+        ('2024-03-01T00:00:00.000001+000000.000001', True, False),
+        ('2024-03-01T01:02:03.2+01:0203', False, False),
+        ('2024-03-01T01:02:03.2+01:02:60', False, False),
+    ]
+    for raw, valid, within_bound in cases:
+        try:
+            instant = datetime.strptime(raw, offset_format).astimezone(timezone.utc)
+        except ValueError:
+            assert not valid
+        else:
+            assert valid and (instant >= datetime.strptime(threshold, offset_format)) == within_bound
+        with timed_csv.open('w', encoding='utf-8', newline='') as stream:
+            csv.writer(stream).writerows([['when'], [raw]])
+        stream_result = subprocess.run(cli + ['validate-stream', str(time_schema), str(timed_csv)],
+                                       capture_output=True, text=True)
+        batch_result = subprocess.run(cli + ['validate', str(timed_manifest)], capture_output=True, text=True)
+        assert stream_result.returncode == int(not valid), stream_result.stdout
+        assert batch_result.returncode == int(not within_bound), batch_result.stdout
+        errors = json.loads(batch_result.stdout)['errors']
+        assert [error['code'] for error in errors] == ([] if within_bound else ['minimum' if valid else 'type'])
+    timed_csv.write_text('when\n' + cases[0][0] + '\n', encoding='utf-8')
+    timed_export = work / 'second-offset-roundtrip'
+    subprocess.run(cli + ['export', str(timed_manifest), str(timed_export)], check=True, capture_output=True)
+    assert (timed_export / 'times.csv').read_bytes() == timed_csv.read_bytes()
+    exported_package = frictionless.Package(str(timed_export / 'datapackage.json'))
+    assert exported_package.validate().valid
+    date_value = exported_package.get_resource('times').read_rows()[0]['when']
+    assert date_value.astimezone(timezone.utc) == datetime.strptime(threshold, offset_format)
+    print('Second and fractional %z offsets agree with Python strptime and survive export to Frictionless')
+
+    # §5.8 of RFC 3339 uses these two spellings for the same leap second.
+    created = work / 'created.json'
+    for timestamp, expected in [
+        ('1990-12-31T23:59:60Z', True), ('1990-12-31T15:59:60-08:00', True),
+        ('1990-12-30T23:59:60Z', False), ('1990-12-31T23:59:60-08:00', False),
+    ]:
+        created.write_text(json.dumps({
+            'created': timestamp, 'resources': [{'name': 'items', 'data': []}],
+        }), encoding='utf-8')
+        actual = subprocess.run(cli + ['inspect-package', str(created)], capture_output=True, text=True)
+        assert actual.returncode == int(not expected), actual.stdout
+        if not expected:
+            assert json.loads(actual.stdout)['errors'][0]['field'] == 'created'
+    print('RFC 3339 leap-second examples accepted; equivalent invalid date or offset rejected')
+
+    tabular_manifest = work / 'tabular-profile.json'
+    tabular_items = {
+        'name': 'items', 'profile': 'tabular-data-resource', 'data': [{'id': 1}],
+        'schema': {'fields': [{'name': 'id', 'type': 'integer'}]},
+    }
+    for change, code_field in [(None, None), ('profile', 'profile'), ('schema', 'schema'), ('data', 'data')]:
+        item = tabular_items.copy()
+        if change == 'data':
+            item['data'] = [1]
+        elif change:
+            del item[change]
+        tabular_manifest.write_text(json.dumps({
+            'profile': 'tabular-data-package', 'resources': [item],
+        }), encoding='utf-8')
+        try:
+            reference_valid = frictionless.Package(str(tabular_manifest)).validate().valid
+        except frictionless.FrictionlessException:
+            reference_valid = False
+        expected = change is None
+        assert reference_valid == expected, change
+        for command in ('inspect-package', 'validate'):
+            actual = subprocess.run(cli + [command, str(tabular_manifest)], capture_output=True, text=True)
+            assert actual.returncode == int(not expected), actual.stdout + actual.stderr
+            if not expected:
+                error = json.loads(actual.stdout)['errors'][0]
+                assert (error['resource'], error['field']) == ('items', code_field)
+    print('Built-in tabular package profiles agree with Frictionless on required profile, schema and rows')
+
     geography = {
         'type': 'MultiPoint',
         'coordinates': [[177, -20], [-178, -16]],
@@ -248,6 +338,26 @@ with tempfile.TemporaryDirectory(prefix='moonfriction-reference-') as temporary:
                     error, = json.loads(actual.stdout)['errors']
                     assert (error['code'], error['field'], error['row']) == ('pattern', 'value', 1)
         print('XML Schema regular expressions: five positive/negative pairs agree with xmllint')
+
+        for kind, builtin, values in [
+            ('year', 'gYear', [('10000', True), ('-0001', True), ('-0000', False), ('01234', False)]),
+            ('yearmonth', 'gYearMonth', [('10000-01', True), ('-0001-02', True), ('0000-02', False),
+                                       ('10000-13', False)]),
+        ]:
+            xsd.write_text(f'<xs:schema xmlns:xs="{namespace[1:-1]}">'
+                           f'<xs:element name="value" type="xs:{builtin}"/></xs:schema>', encoding='utf-8')
+            schema_path.write_text(json.dumps({'fields': [{'name': 'value', 'type': kind}]}), encoding='utf-8')
+            for value, expected in values:
+                xml.write_text(f'<value>{value}</value>', encoding='utf-8')
+                external = subprocess.run(['xmllint', '--noout', '--schema', str(xsd), str(xml)],
+                                          capture_output=True)
+                with data_path.open('w', newline='', encoding='utf-8') as stream:
+                    csv.writer(stream).writerows([['value'], [value]])
+                actual = subprocess.run(cli + ['validate-stream', str(schema_path), str(data_path)],
+                                        capture_output=True, text=True)
+                assert (external.returncode == 0) == expected, (value, external.stderr)
+                assert actual.returncode == int(not expected), (value, actual.stdout, actual.stderr)
+        print('Expanded and signed years match the XML Schema 1.0 lexical examples checked with xmllint')
 
     tz = ROOT / 'examples/iana-tzdb'
     data = tz / 'zones.csv'

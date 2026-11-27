@@ -9,7 +9,7 @@ priv struct ParsedTemporal {
   mut minute : Int32
   mut second : Int32
   mut fraction : String
-  mut offset : String?
+  mut offset : (Int32, Int32)
   mut ordinal : Int32
   mut iso_year : Int32
   mut week : Int32
@@ -29,7 +29,7 @@ fn empty_parsed_temporal() -> ParsedTemporal {
     minute: 0,
     second: 0,
     fraction: "",
-    offset: None,
+    offset: (0, 0),
     ordinal: 0,
     iso_year: 0,
     week: -1,
@@ -66,51 +66,69 @@ fn parse_fraction_token(
 }
 
 ///|
+fn fraction_microseconds(fraction : String) -> Int32 {
+  let mut micros = 0
+  for index in 0..<6 {
+    micros *= 10
+    if index < fraction.length() {
+      micros += fraction.code_unit_at(index).to_int() - 48
+    }
+  }
+  micros
+}
+
+///|
 fn parse_offset_token(
   raw : String,
   start : Int32,
-) -> Result[(String, Int32), String] {
-  if start >= raw.length() {
-    return Err("Expected %z offset")
+  extended~ : Bool,
+) -> Result[((Int32, Int32), Int32), String] {
+  if expect_char(raw, start, 'Z') {
+    return Ok(((0, 0), 1))
   }
-  let code = raw.code_unit_at(start).to_int()
-  if code == 90 { // Z
-    return Ok(("Z", 1))
+  guard expect_char(raw, start, '+') || expect_char(raw, start, '-') else {
+    return Err("Expected %z as Z or a signed numeric offset")
   }
-  if code != 43 && code != 45 {
-    return Err("Expected %z as Z, ±HH:MM or ±HHMM")
+  let separated = expect_char(raw, start + 3, ':')
+  let minute_start = start + (if separated { 4 } else { 3 })
+  let hour = match parse_digits(raw, start + 1, 2) {
+    Ok(value) => value
+    Err(message) => return Err(message)
   }
-  let mut consumed = 0
-  let mut hour = 0
-  let mut minute = 0
-  if start + 6 <= raw.length() && expect_char(raw, start + 3, ':') {
-    hour = match parse_digits(raw, start + 1, 2) {
-      Ok(value) => value
-      Err(message) => return Err(message)
-    }
-    minute = match parse_digits(raw, start + 4, 2) {
-      Ok(value) => value
-      Err(message) => return Err(message)
-    }
-    consumed = 6
-  } else if start + 5 <= raw.length() {
-    hour = match parse_digits(raw, start + 1, 2) {
-      Ok(value) => value
-      Err(message) => return Err(message)
-    }
-    minute = match parse_digits(raw, start + 3, 2) {
-      Ok(value) => value
-      Err(message) => return Err(message)
-    }
-    consumed = 5
+  let minute = match parse_digits(raw, minute_start, 2) {
+    Ok(value) => value
+    Err(message) => return Err(message)
+  }
+  let mut end = minute_start + 2
+  let mut second = 0
+  let mut micros = 0
+  let second_start = if separated { end + 1 } else { end }
+  let has_seconds = if separated {
+    expect_char(raw, end, ':') && is_ascii_digit(raw, second_start)
   } else {
-    return Err("Expected %z as Z, ±HH:MM or ±HHMM")
+    is_ascii_digit(raw, second_start) && is_ascii_digit(raw, second_start + 1)
   }
-  if hour > 23 || minute > 59 {
+  if extended && has_seconds {
+    second = match parse_digits(raw, second_start, 2) {
+      Ok(value) => value
+      Err(message) => return Err(message)
+    }
+    end = second_start + 2
+    if expect_char(raw, end, '.') && is_ascii_digit(raw, end + 1) {
+      let (fraction, consumed) = match parse_fraction_token(raw, end + 1) {
+        Ok(value) => value
+        Err(message) => return Err(message)
+      }
+      micros = fraction_microseconds(fraction)
+      end += consumed + 1
+    }
+  }
+  if hour > 23 || minute > 59 || second > 59 {
     return Err("Invalid %z offset")
   }
-  let sign = if code == 45 { "-" } else { "+" }
-  Ok((sign + pad2(hour) + ":" + pad2(minute), consumed))
+  let sign = if expect_char(raw, start, '-') { -1 } else { 1 }
+  let seconds = hour * 3600 + minute * 60 + second
+  Ok(((sign * seconds, sign * micros), end - start))
 }
 
 ///|
@@ -178,6 +196,7 @@ fn expand_temporal_pattern(raw : String) -> String {
 fn parse_with_pattern(
   raw : String,
   format : String,
+  extended_offset~ : Bool = true,
 ) -> Result[ParsedTemporal, String] {
   let parts = empty_parsed_temporal()
   let mut format_index = 0
@@ -230,11 +249,12 @@ fn parse_with_pattern(
         raw_index += consumed
       }
       122 => { // %z
-        let (offset, consumed) = match parse_offset_token(raw, raw_index) {
+        let (offset, consumed) = match
+          parse_offset_token(raw, raw_index, extended=extended_offset) {
           Ok(value) => value
           Err(message) => return Err(message)
         }
-        parts.offset = Some(offset)
+        parts.offset = offset
         raw_index += consumed
       }
       90 => { // %Z
@@ -244,7 +264,6 @@ fn parse_with_pattern(
           ) {
           return Err("Expected UTC or GMT for %Z")
         }
-        parts.offset = Some("Z")
         raw_index += 3
       }
       98 | 66 | 104 | 97 | 65 | 112 => { // %b %B %h %a %A %p
@@ -374,7 +393,9 @@ fn date_from_ordinal(year : Int32, ordinal : Int32) -> (Int32, Int32, Int32) {
 }
 
 ///|
-fn parsed_calendar_date(parts : ParsedTemporal) -> Result[String, String] {
+fn parsed_calendar_date(
+  parts : ParsedTemporal,
+) -> Result[(Int32, Int32, Int32), String] {
   let year = if parts.week_kind == 86 { parts.iso_year } else { parts.year }
   if year < 1 || year > 9999 {
     return Err("Invalid calendar year")
@@ -411,7 +432,7 @@ fn parsed_calendar_date(parts : ParsedTemporal) -> Result[String, String] {
     return Err("Invalid calendar date")
   }
   // Python treats a weekday written next to a calendar date as descriptive.
-  Ok(format_date(y, m, d))
+  Ok((y, m, d))
 }
 
 ///|
@@ -420,7 +441,10 @@ fn canonical_from_parsed(
   parts : ParsedTemporal,
 ) -> Result[String, String] {
   match type_name {
-    "date" => parsed_calendar_date(parts)
+    "date" =>
+      parsed_calendar_date(parts).map(date => {
+        format_date(date.0, date.1, date.2)
+      })
     "time" =>
       normalize_temporal(
         "time",
@@ -432,27 +456,35 @@ fn canonical_from_parsed(
         ),
       )
     "datetime" => {
-      // A datetime pattern without %z is interpreted as UTC. This is our
-      // explicit policy for otherwise timezone-less custom formats.
-      let offset = match parts.offset {
-        Some(value) => value
-        None => "Z"
+      if parts.hour > 23 || parts.minute > 59 || parts.second > 59 {
+        return Err("Invalid clock time")
       }
       let date = match parsed_calendar_date(parts) {
         Ok(date) => date
         Err(message) => return Err(message)
       }
-      normalize_temporal(
-        "datetime",
-        date +
-        "T" +
-        format_time_fraction(
-          parts.hour,
-          parts.minute,
-          parts.second,
-          parts.fraction,
-        ) +
-        offset,
+      // Apply the fractional offset in integer microseconds. A negative
+      // remainder borrows one second before normalizing the UTC date.
+      let (offset_seconds, offset_micros) = parts.offset
+      let difference = fraction_microseconds(parts.fraction) - offset_micros
+      let mut local_seconds = parts.hour * 3600 +
+        parts.minute * 60 +
+        parts.second
+      let micros = if difference < 0 {
+        local_seconds -= 1
+        difference + 1000000
+      } else if difference >= 1000000 {
+        local_seconds += 1
+        difference - 1000000
+      } else {
+        difference
+      }
+      let digits = (1000000 + micros).to_string()
+      datetime_to_utc(
+        date,
+        local_seconds,
+        trim_fraction(digits, 1, 7),
+        offset_seconds,
       )
     }
     _ => Err("Unsupported temporal type: " + type_name)
@@ -465,8 +497,15 @@ fn normalize_pattern(
   raw : String,
   format : String,
 ) -> Result[String, String] {
-  let parts = match parse_with_pattern(raw, expand_temporal_pattern(format)) {
+  let expanded = expand_temporal_pattern(format)
+  let parts = match parse_with_pattern(raw, expanded) {
     Ok(value) => value
+    Err(message) if expanded.contains("%z") =>
+      // A numeric literal after %z can look like optional offset seconds.
+      match parse_with_pattern(raw, expanded, extended_offset=false) {
+        Ok(value) => value
+        Err(_) => return Err(message)
+      }
     Err(message) => return Err(message)
   }
   canonical_from_parsed(type_name, parts)
@@ -602,7 +641,8 @@ fn normalize_any(type_name : String, raw : String) -> Result[String, String] {
 /// Formats use the C locale and %Z accepts UTC or GMT. Unknown directives,
 /// duplicate components and non-ASCII literal text are rejected. `%y` uses the
 /// POSIX 69/68 pivot; `%f` accepts one to six fractional digits and trims trailing
-/// zeroes. A datetime pattern without %z is interpreted as UTC.
+/// zeroes. %z accepts seconds and fractional seconds. A datetime pattern
+/// without a zone is interpreted as UTC.
 /// `any` accepts only a small documented unambiguous set, never a guessed
 /// day/month order.
 pub fn normalize_temporal_format(

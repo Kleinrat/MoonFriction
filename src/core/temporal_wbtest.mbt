@@ -204,3 +204,59 @@ test "unsupported temporal types and unknown formats fail explicitly" {
   assert_true(normalize_temporal("any", "2024-01-01") is Err(_))
   assert_true(normalize_temporal("duration", "P1D") is Err(_))
 }
+
+///|
+test "default datetime keeps known UTC leap seconds as distinct instants" {
+  for
+    raw in [
+      "1990-12-31T23:59:60Z", "1990-12-31T15:59:60-08:00", "1991-01-01T00:59:60+01:00",
+    ] {
+    assert_eq(normalize_temporal("datetime", raw), Ok("1990-12-31T23:59:60Z"))
+  }
+  let late = normalize_temporal("datetime", "2016-12-31T23:59:60.123456789Z").unwrap()
+  assert_eq(late, "2016-12-31T23:59:60.123456789Z")
+  assert_eq(compare_temporal("datetime", "2016-12-31T23:59:59.999Z", late), -1)
+  assert_eq(compare_temporal("datetime", late, "2017-01-01T00:00:00Z"), -1)
+  for
+    raw in [
+      "2015-12-31T23:59:60Z", "2015-06-30T23:58:60Z", "2016-12-31T23:59:60+01:00",
+    ] {
+    assert_true(normalize_temporal("datetime", raw) is Err(_))
+  }
+}
+
+///|
+test "XML Schema expanded years compare by magnitude without losing digits" {
+  let timeline = [
+    "-100000000000000000000000", "-10000", "-0002", "-0001", "0001", "9999", "10000",
+    "100000000000000000000000",
+  ]
+  for index, raw in timeline {
+    assert_eq(normalize_temporal("year", raw), Ok(raw))
+    if index > 0 {
+      assert_eq(compare_temporal("year", timeline[index - 1], raw), -1)
+    }
+  }
+  for invalid in ["+10000", "00000", "-0000", "00001", "-01234"] {
+    assert_true(normalize_temporal("year", invalid) is Err(_))
+  }
+  assert_eq(normalize_temporal("yearmonth", "-10000-01"), Ok("-10000-01"))
+  assert_eq(compare_temporal("yearmonth", "-0002-12", "-0001-01"), -1)
+  assert_eq(compare_temporal("yearmonth", "-0001-01", "-0001-02"), -1)
+  assert_eq(compare_temporal("yearmonth", "9999-12", "10000-01"), -1)
+
+  let descriptor =
+    #|{"fields":[{"name":"period","type":"yearmonth","constraints":{"minimum":"-0002-02","maximum":"10000-02"}}]}
+  let schema = parse_table_schema(descriptor).unwrap()
+  let report = validate_table("periods", schema.fields, ["period"], [
+    ["-0002-01"],
+    ["-0002-02"],
+    ["9999-12"],
+    ["10000-02"],
+    ["10000-03"],
+  ])
+  assert_eq(report.errors.map(error => (error.row, error.code)), [
+    (1, "minimum"),
+    (5, "maximum"),
+  ])
+}

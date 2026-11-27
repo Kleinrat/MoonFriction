@@ -146,25 +146,65 @@ fn check_package_metadata(
 ///|
 fn created_timestamp(value : Json) -> Bool {
   guard value is String(raw) else { return false }
-  let pattern = re"^([0-9]{4}-[0-9]{2}-[0-9]{2})[Tt]([0-9]{2}:[0-9]{2}):([0-9]{2})(?:\.[0-9]+)?([Zz]|[+\-][0-9]{2}:[0-9]{2})$"
-  guard pattern.execute(raw[:]) is Some(parts) &&
-    parts.group(1) is Some(date) &&
-    parts.group(2) is Some(clock) &&
-    parts.group(3) is Some(second) &&
-    parts.group(4) is Some(offset) else {
+  // RFC 3339 permits lowercase T and Z. Ordinary timestamps only need
+  // lexical validation here because the descriptor retains the local year.
+  let timestamp = raw.to_upper()
+  guard expect_char(timestamp, 10, 'T') &&
+    parse_date_at(timestamp, 0) is Ok(_) &&
+    parse_time_at(timestamp, 11, allow_leap_second=true)
+    is Ok((_, _, second, _, end)) &&
+    parse_offset_at(timestamp, end) is Ok(_) else {
     return false
   }
-  let normalized_second = if second == "60" { "59" } else { second.to_owned() }
-  normalize_temporal(
-    "datetime",
-    date.to_owned() +
-    "T" +
-    clock.to_owned() +
-    ":" +
-    normalized_second +
-    offset.to_owned().to_upper(),
-  )
-  is Ok(_)
+  second != 60 || normalize_temporal("datetime", timestamp) is Ok(_)
+}
+
+///|
+fn check_tabular_profile(
+  resource : Json,
+  name : String,
+  package_is_tabular : Bool,
+  errors : Array[Diagnostic],
+) -> Unit {
+  if !(prop(resource, "profile") is String("tabular-data-resource")) {
+    if package_is_tabular {
+      errors.push(
+        issue(
+          "descriptor", name, 0, "profile", "Expected tabular-data-resource in a tabular-data-package",
+        ),
+      )
+    }
+    return
+  }
+  match prop(resource, "schema") {
+    Object(_) as schema =>
+      parse_schema_value(schema, name, true, errors) |> ignore
+    String(_) => () // The general locator check and the caller handle references.
+    Null =>
+      errors.push(
+        issue(
+          "descriptor", name, 0, "schema", "A tabular-data-resource requires a Table Schema",
+        ),
+      )
+    _ => () // Already reported by the general schema check.
+  }
+  match prop(resource, "data") {
+    Null =>
+      if tabular_format(resource) != "csv" {
+        errors.push(
+          issue(
+            "descriptor", name, 0, "format", "External tabular-data-resource data must be CSV",
+          ),
+        )
+      }
+    Array(rows) if rows.all(row => row is (Array(_) | Object(_))) => ()
+    _ =>
+      errors.push(
+        issue(
+          "descriptor", name, 0, "data", "Inline tabular-data-resource data must be an array of JSON rows",
+        ),
+      )
+  }
 }
 
 ///|
@@ -189,6 +229,8 @@ pub fn parse_data_package(
   let errors = []
   let resources = []
   let names : Map[String, Bool] = Map([])
+  let package_is_tabular = prop(original, "profile")
+    is String("tabular-data-package")
   check_package_metadata(package_fields, "", false, errors)
   if package_fields.get("name") is Some(value) &&
     !(value is String(name) && valid_resource_name(name)) {
@@ -247,6 +289,7 @@ pub fn parse_data_package(
         issue("descriptor", name, 0, "bytes", "Expected a nonnegative integer"),
       )
     }
+    check_tabular_profile(item, name, package_is_tabular, errors)
     match data_location(fields) {
       Ok(location) => resources.push({ name, location, metadata: item, })
       Err(message) =>

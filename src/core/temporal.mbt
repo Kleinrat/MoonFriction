@@ -6,8 +6,8 @@
 /// - time:      hh:mm:ss with an optional fractional-second suffix
 /// - datetime:  YYYY-MM-DDThh:mm:ss with an optional fractional-second suffix,
 ///              followed by Z or a ±HH:MM offset
-/// - year:      YYYY
-/// - yearmonth: YYYY-MM
+/// - year:      YYYY, with optional minus sign and expanded digits
+/// - yearmonth: YYYY-MM, with the same year syntax
 ///
 /// Datetime values with a numeric offset are converted to UTC and rendered with
 /// Z. Fractions are arbitrary-length digit strings with trailing zeroes removed.
@@ -119,6 +119,7 @@ fn trim_fraction(raw : String, start : Int32, end : Int32) -> String {
 fn parse_time_at(
   raw : String,
   start : Int32,
+  allow_leap_second~ : Bool = false,
 ) -> Result[(Int32, Int32, Int32, String, Int32), String] {
   if start < 0 || start + 8 > raw.length() {
     return Err("Expected time as hh:mm:ss")
@@ -138,7 +139,8 @@ fn parse_time_at(
     Ok(value) => value
     Err(message) => return Err(message)
   }
-  if hour > 23 || minute > 59 || second > 59 {
+  let max_second = if allow_leap_second { 60 } else { 59 }
+  if hour > 23 || minute > 59 || second > max_second {
     return Err("Invalid clock time")
   }
   let mut end = start + 8
@@ -283,6 +285,90 @@ fn parse_offset_at(raw : String, start : Int32) -> Result[Int32, String] {
 }
 
 ///|
+// UTC insertion dates derived from the public-domain IANA tzdb leapseconds
+// file. Keep this in sync when IERS announces another leap second.
+let leap_second_dates : Array[String] = [
+  "1972-06-30", "1972-12-31", "1973-12-31", "1974-12-31", "1975-12-31", "1976-12-31",
+  "1977-12-31", "1978-12-31", "1979-12-31", "1981-06-30", "1982-06-30", "1983-06-30",
+  "1985-06-30", "1987-12-31", "1989-12-31", "1990-12-31", "1992-06-30", "1993-06-30",
+  "1994-06-30", "1995-12-31", "1997-06-30", "1998-12-31", "2005-12-31", "2008-12-31",
+  "2012-06-30", "2015-06-30", "2016-12-31",
+]
+
+///|
+fn datetime_to_utc(
+  date : (Int32, Int32, Int32),
+  local_seconds : Int32,
+  fraction : String,
+  offset_seconds : Int32,
+  leap_second~ : Bool = false,
+) -> Result[String, String] {
+  let mut date = date
+  let mut total = local_seconds - offset_seconds
+  while total < 0 {
+    total = total + 86400
+    date = match shift_date(date.0, date.1, date.2, -1) {
+      Ok(value) => value
+      Err(message) => return Err(message)
+    }
+  }
+  while total >= 86400 {
+    total = total - 86400
+    date = match shift_date(date.0, date.1, date.2, 1) {
+      Ok(value) => value
+      Err(message) => return Err(message)
+    }
+  }
+  let hour = total / 3600
+  let minute = total % 3600 / 60
+  let day = format_date(date.0, date.1, date.2)
+  if leap_second && (total != 86399 || !leap_second_dates.contains(day)) {
+    return Err("Second 60 requires a known UTC leap-second instant")
+  }
+  let second = if leap_second { 60 } else { total % 60 }
+  Ok(day + "T" + format_time_fraction(hour, minute, second, fraction) + "Z")
+}
+
+///|
+fn calendar_year_end(value : String, start : Int32) -> Int32 {
+  let mut end = start
+  while is_ascii_digit(value, end) {
+    end += 1
+  }
+  end
+}
+
+///|
+fn normalize_calendar_period(
+  raw : String,
+  has_month : Bool,
+) -> Result[String, String] {
+  let start = if expect_char(raw, 0, '-') { 1 } else { 0 }
+  let end = calendar_year_end(raw, start)
+  let width = end - start
+  if width < 4 ||
+    (width > 4 && expect_char(raw, start, '0')) ||
+    raw[start:end] == "0000" {
+    return Err("Expected a nonzero year with at least four digits")
+  }
+  if has_month {
+    if raw.length() != end + 3 || !expect_char(raw, end, '-') {
+      return Err("Expected year-month as YYYY-MM")
+    }
+    let month = match parse_digits(raw, end + 1, 2) {
+      Ok(value) => value
+      Err(message) => return Err(message)
+    }
+    if month < 1 || month > 12 {
+      return Err("Invalid year-month")
+    }
+  } else if end != raw.length() {
+    return Err("Unexpected characters after year")
+  }
+  Ok(raw)
+}
+
+///|
 /// Normalize one Table Schema v1 default-format temporal value.
 /// Returns Err for unsupported type names, malformed formats, impossible
 /// calendar dates/clocks and out-of-range results of offset normalization.
@@ -320,7 +406,7 @@ pub fn normalize_temporal(
         Err(message) => return Err(message)
       }
       let (hour, minute, second, fraction, time_end) = match
-        parse_time_at(raw, 11) {
+        parse_time_at(raw, 11, allow_leap_second=true) {
         Ok(value) => value
         Err(message) => return Err(message)
       }
@@ -328,62 +414,18 @@ pub fn normalize_temporal(
         Ok(value) => value
         Err(message) => return Err(message)
       }
-      let mut total = hour * 3600 + minute * 60 + second - offset
-      let mut date = (year, month, day)
-      while total < 0 {
-        total = total + 86400
-        date = match shift_date(date.0, date.1, date.2, -1) {
-          Ok(value) => value
-          Err(message) => return Err(message)
-        }
-      }
-      while total >= 86400 {
-        total = total - 86400
-        date = match shift_date(date.0, date.1, date.2, 1) {
-          Ok(value) => value
-          Err(message) => return Err(message)
-        }
-      }
-      let hour = total / 3600
-      let minute = total % 3600 / 60
-      let second = total % 60
-      Ok(
-        format_date(date.0, date.1, date.2) +
-        "T" +
-        format_time_fraction(hour, minute, second, fraction) +
-        "Z",
+      let leap_second = second == 60
+      let base_second = if leap_second { 59 } else { second }
+      datetime_to_utc(
+        (year, month, day),
+        hour * 3600 + minute * 60 + base_second,
+        fraction,
+        offset,
+        leap_second~,
       )
     }
-    "year" => {
-      if raw.length() != 4 {
-        return Err("Expected year as YYYY")
-      }
-      let year = match parse_digits(raw, 0, 4) {
-        Ok(value) => value
-        Err(message) => return Err(message)
-      }
-      if year < 1 {
-        return Err("Year 0000 is outside the supported calendar")
-      }
-      Ok(pad4(year))
-    }
-    "yearmonth" => {
-      if raw.length() != 7 || !expect_char(raw, 4, '-') {
-        return Err("Expected year-month as YYYY-MM")
-      }
-      let year = match parse_digits(raw, 0, 4) {
-        Ok(value) => value
-        Err(message) => return Err(message)
-      }
-      let month = match parse_digits(raw, 5, 2) {
-        Ok(value) => value
-        Err(message) => return Err(message)
-      }
-      if year < 1 || month < 1 || month > 12 {
-        return Err("Invalid year-month")
-      }
-      Ok(pad4(year) + "-" + pad2(month))
-    }
+    "year" => normalize_calendar_period(raw, false)
+    "yearmonth" => normalize_calendar_period(raw, true)
     _ => Err("Unsupported temporal type: " + type_name)
   }
 }
@@ -476,9 +518,38 @@ fn compare_strings(left : String, right : String) -> Int32 {
 }
 
 ///|
+fn compare_calendar_period(left : String, right : String) -> Int32 {
+  let left_negative = expect_char(left, 0, '-')
+  let right_negative = expect_char(right, 0, '-')
+  if left_negative != right_negative {
+    return if left_negative { -1 } else { 1 }
+  }
+  let start = if left_negative { 1 } else { 0 }
+  let left_end = calendar_year_end(left, start)
+  let right_end = calendar_year_end(right, start)
+  let magnitude = if left_end < right_end {
+    -1
+  } else if left_end > right_end {
+    1
+  } else {
+    compare_strings(
+      left[start:left_end].to_owned(),
+      right[start:right_end].to_owned(),
+    )
+  }
+  if magnitude == 0 {
+    compare_strings(left[left_end:].to_owned(), right[right_end:].to_owned())
+  } else if left_negative {
+    -magnitude
+  } else {
+    magnitude
+  }
+}
+
+///|
 /// Compare two values that were already returned by `normalize_temporal`.
-/// Date/year/yearmonth use fixed-width lexicographic order; time/datetime compare
-/// their fixed-width second prefix first and then the optional fraction.
+/// Dates use chronological lexicographic order. Years compare as signed
+/// magnitudes and clocks compare the second prefix before the fraction.
 pub fn compare_temporal(
   type_name : String,
   left : String,
@@ -495,7 +566,7 @@ pub fn compare_temporal(
         left.length() - 1,
         right.length() - 1,
       )
-    "date" | "year" | "yearmonth" => compare_strings(left, right)
+    "year" | "yearmonth" => compare_calendar_period(left, right)
     _ => compare_strings(left, right)
   }
 }

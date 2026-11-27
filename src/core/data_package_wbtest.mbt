@@ -146,3 +146,73 @@ test "package and resource profiles validate original descriptors and supplied r
     data.validate_profiles(profile_docs).any(e => e.resource == "items"),
   )
 }
+
+///|
+test "created follows the RFC 3339 examples and validates leap-second days" {
+  for
+    (stamp, expected) in [
+      ("1985-04-12T23:20:50.52Z", true),
+      ("0001-01-01T00:00:00+01:00", true),
+      ("9999-12-31T23:59:59-01:00", true),
+      ("1990-12-31T15:59:60-08:00", true),
+      ("1990-12-31t23:59:60z", true),
+      ("1991-01-01T05:59:60+06:00", true),
+      ("1990-12-31T23:59:60+06:00", false),
+      ("1991-12-31T23:59:60Z", false),
+      ("1990-12-31T24:00:00Z", false),
+      ("2024-11-26T12:00:00+01:02:03", false),
+    ] {
+    let descriptor = "{\"created\":\"" +
+      stamp +
+      "\",\"resources\":[{\"name\":\"items\",\"data\":[]}]}"
+    match parse_data_package(descriptor) {
+      Ok(_) => assert_true(expected)
+      Err(errors) => {
+        assert_false(expected)
+        assert_eq(errors.map(e => e.field), ["created"])
+      }
+    }
+  }
+}
+
+///|
+test "built-in tabular profiles enforce resource profile, schema and storage shape" {
+  let csv_package =
+    #|{"profile":"tabular-data-package","resources":[{"name":"items","profile":"tabular-data-resource","path":"items.csv","schema":{"fields":[{"name":"id","type":"integer"}]}}]}
+  let inline = csv_package.replace_all(
+    old="\"path\":\"items.csv\"",
+    new="\"data\":[{\"id\":1}]",
+  )
+  for
+    valid in [
+      csv_package,
+      inline,
+      csv_package.replace_all(
+        old="{\"fields\":[{\"name\":\"id\",\"type\":\"integer\"}]}",
+        new="\"schema.json\"",
+      ),
+    ] {
+    assert_true(parse_data_package(valid) is Ok(_))
+  }
+  for
+    (before, after, field) in [
+      ("\"profile\":\"tabular-data-resource\",", "", "profile"),
+      (
+        ",\"schema\":{\"fields\":[{\"name\":\"id\",\"type\":\"integer\"}]}", "",
+        "schema",
+      ),
+      ("\"path\":\"items.csv\"", "\"path\":\"items.json\"", "format"),
+      ("\"path\":\"items.csv\"", "\"data\":[1]", "data"),
+      (
+        "\"path\":\"items.csv\"", "\"data\":\"id\\n1\",\"format\":\"csv\"", "data",
+      ),
+    ] {
+    let errors = parse_data_package(
+      csv_package.replace_all(old=before, new=after),
+    ).unwrap_err()
+    assert_true(errors.any(e => e.resource == "items" && e.field == field))
+  }
+  let generic =
+    #|{"resources":[{"name":"items","format":"csv","data":"id\n1"}]}
+  assert_true(parse_data_package(generic) is Ok(_))
+}
